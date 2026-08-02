@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/home/kaywang/workspace/Axis/build",
+  "command": "/usr/bin/c++  -I/home/kaywang/workspace/Axis/module -I/opt/systemc/include -std=c++17 -o CMakeFiles/axis_test.dir/test/main.cpp.o -c /home/kaywang/workspace/Axis/test/main.cpp",
+  "file": "/home/kaywang/workspace/Axis/test/main.cpp",
+  "output": "CMakeFiles/axis_test.dir/test/main.cpp.o"
+}
+]

@@ -1,0 +1,21 @@
+0 s | CREATE ScalarSource
+0 s | WAIT_START source_interval next_value=10 delay=7 ns
+7 ns | WAIT_END source_interval next_value=10
+7 ns | OUTPUT_TRANSFER_START value=10 transfer_delay=1 ns
+7 ns | OUTPUT_TRANSFER_END value=10
+7 ns | WAIT_START source_interval next_value=20 delay=7 ns
+14 ns | WAIT_END source_interval next_value=20
+14 ns | OUTPUT_TRANSFER_START value=20 transfer_delay=1 ns
+14 ns | OUTPUT_TRANSFER_END value=20
+14 ns | WAIT_START source_interval next_value=30 delay=7 ns
+21 ns | WAIT_END source_interval next_value=30
+21 ns | OUTPUT_TRANSFER_START value=30 transfer_delay=1 ns
+30 ns | OUTPUT_TRANSFER_END value=30
+30 ns | WAIT_START source_interval next_value=40 delay=7 ns
+37 ns | WAIT_END source_interval next_value=40
+37 ns | OUTPUT_TRANSFER_START value=40 transfer_delay=1 ns
+60 ns | OUTPUT_TRANSFER_END value=40
+60 ns | WAIT_START source_interval next_value=50 delay=7 ns
+67 ns | WAIT_END source_interval next_value=50
+67 ns | OUTPUT_TRANSFER_START value=50 transfer_delay=1 ns
+90 ns | OUTPUT_TRANSFER_END value=50

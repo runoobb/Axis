@@ -1,0 +1,124 @@
+0 s | CREATE BinaryScalarOp | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+0 s | WAIT_START function_interval | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+0 s | WAIT_START output_data | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+4 ns | INPUT_REQUEST in0 value=1 arrival_delay=1 ns | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+4 ns | INPUT_RESERVED | in_q0=[] in_q1=[] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=0
+4 ns | WAIT_START input_arrival_latency in0 value=1 delay=1 ns | in_q0=[] in_q1=[] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=0
+5 ns | WAIT_END input_arrival_latency in0 value=1 | in_q0=[] in_q1=[] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=0
+5 ns | INPUT_ARRIVED in0 value=1 | in_q0=[1] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+7 ns | INPUT_REQUEST in1 value=10 arrival_delay=1 ns | in_q0=[1] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+7 ns | INPUT_RESERVED | in_q0=[1] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=0
+7 ns | WAIT_START input_arrival_latency in1 value=10 delay=1 ns | in_q0=[1] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=0
+8 ns | INPUT_REQUEST in0 value=2 arrival_delay=1 ns | in_q0=[1] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=0
+8 ns | INPUT_RESERVED | in_q0=[1] in_q1=[] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=0
+8 ns | WAIT_END input_arrival_latency in1 value=10 | in_q0=[1] in_q1=[] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=0
+8 ns | INPUT_ARRIVED in1 value=10 | in_q0=[1] in_q1=[10] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=0
+8 ns | WAIT_START input_arrival_latency in0 value=2 delay=1 ns | in_q0=[1] in_q1=[10] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=0
+9 ns | WAIT_END input_arrival_latency in0 value=2 | in_q0=[1] in_q1=[10] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=0
+9 ns | INPUT_ARRIVED in0 value=2 | in_q0=[1, 2] in_q1=[10] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+12 ns | INPUT_REQUEST in0 value=3 arrival_delay=1 ns | in_q0=[1, 2] in_q1=[10] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+12 ns | WAIT_START input_space in0 value=3 | in_q0=[1, 2] in_q1=[10] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+14 ns | INPUT_REQUEST in1 value=20 arrival_delay=1 ns | in_q0=[1, 2] in_q1=[10] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+14 ns | INPUT_RESERVED | in_q0=[1, 2] in_q1=[10] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=0
+14 ns | WAIT_START input_arrival_latency in1 value=20 delay=1 ns | in_q0=[1, 2] in_q1=[10] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=0
+15 ns | WAIT_END input_arrival_latency in1 value=20 | in_q0=[1, 2] in_q1=[10] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=0
+15 ns | INPUT_ARRIVED in1 value=20 | in_q0=[1, 2] in_q1=[10, 20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+21 ns | INPUT_REQUEST in1 value=30 arrival_delay=1 ns | in_q0=[1, 2] in_q1=[10, 20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+21 ns | WAIT_START input_space in1 value=30 | in_q0=[1, 2] in_q1=[10, 20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+30 ns | WAIT_END function_interval | in_q0=[1, 2] in_q1=[10, 20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+30 ns | FUNCTION_START consume_in0=1 consume_in1=10 | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+30 ns | WAIT_START function_interval | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+30 ns | WAIT_START compute_latency inputs=(1, 10) delay=12 ns | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+30 ns | WAIT_END input_space in1 value=30 | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+30 ns | INPUT_RESERVED | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=1
+30 ns | WAIT_END input_space in0 value=3 | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=1
+30 ns | INPUT_RESERVED | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+30 ns | WAIT_START input_arrival_latency in1 value=30 delay=1 ns | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+30 ns | WAIT_START input_arrival_latency in0 value=3 delay=1 ns | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+31 ns | WAIT_END input_arrival_latency in1 value=30 | in_q0=[2] in_q1=[20] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+31 ns | INPUT_ARRIVED in1 value=30 | in_q0=[2] in_q1=[20, 30] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=1
+31 ns | WAIT_END input_arrival_latency in0 value=3 | in_q0=[2] in_q1=[20, 30] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=1
+31 ns | INPUT_ARRIVED in0 value=3 | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+34 ns | INPUT_REQUEST in0 value=4 arrival_delay=1 ns | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+34 ns | WAIT_START input_space in0 value=4 | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+37 ns | INPUT_REQUEST in1 value=40 arrival_delay=1 ns | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+37 ns | WAIT_START input_space in1 value=40 | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+42 ns | WAIT_END compute_latency inputs=(1, 10) | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+42 ns | FUNCTION_FINISH produce_out=11 | in_q0=[2, 3] in_q1=[20, 30] out_q=[11] input_reserved0=0 input_reserved1=0 output_reserved=0
+42 ns | WAIT_END output_data | in_q0=[2, 3] in_q1=[20, 30] out_q=[11] input_reserved0=0 input_reserved1=0 output_reserved=0
+42 ns | TRANSFER_START value=11 transfer_delay=3 ns | in_q0=[2, 3] in_q1=[20, 30] out_q=[11] input_reserved0=0 input_reserved1=0 output_reserved=0
+45 ns | TRANSFER_END value=11 | in_q0=[2, 3] in_q1=[20, 30] out_q=[11] input_reserved0=0 input_reserved1=0 output_reserved=0
+45 ns | OUTPUT_CONSUMED value=11 | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+45 ns | WAIT_START output_data | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+60 ns | WAIT_END function_interval | in_q0=[2, 3] in_q1=[20, 30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+60 ns | FUNCTION_START consume_in0=2 consume_in1=20 | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+60 ns | WAIT_START function_interval | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+60 ns | WAIT_START compute_latency inputs=(2, 20) delay=12 ns | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+60 ns | WAIT_END input_space in1 value=40 | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+60 ns | INPUT_RESERVED | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=1
+60 ns | WAIT_END input_space in0 value=4 | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=0 input_reserved1=1 output_reserved=1
+60 ns | INPUT_RESERVED | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+60 ns | WAIT_START input_arrival_latency in1 value=40 delay=1 ns | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+60 ns | WAIT_START input_arrival_latency in0 value=4 delay=1 ns | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+61 ns | WAIT_END input_arrival_latency in1 value=40 | in_q0=[3] in_q1=[30] out_q=[] input_reserved0=1 input_reserved1=1 output_reserved=1
+61 ns | INPUT_ARRIVED in1 value=40 | in_q0=[3] in_q1=[30, 40] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=1
+61 ns | WAIT_END input_arrival_latency in0 value=4 | in_q0=[3] in_q1=[30, 40] out_q=[] input_reserved0=1 input_reserved1=0 output_reserved=1
+61 ns | INPUT_ARRIVED in0 value=4 | in_q0=[3, 4] in_q1=[30, 40] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+64 ns | INPUT_REQUEST in0 value=5 arrival_delay=1 ns | in_q0=[3, 4] in_q1=[30, 40] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+64 ns | WAIT_START input_space in0 value=5 | in_q0=[3, 4] in_q1=[30, 40] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+67 ns | INPUT_REQUEST in1 value=50 arrival_delay=1 ns | in_q0=[3, 4] in_q1=[30, 40] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+67 ns | WAIT_START input_space in1 value=50 | in_q0=[3, 4] in_q1=[30, 40] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+72 ns | WAIT_END compute_latency inputs=(2, 20) | in_q0=[3, 4] in_q1=[30, 40] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=1
+72 ns | FUNCTION_FINISH produce_out=22 | in_q0=[3, 4] in_q1=[30, 40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=0
+72 ns | WAIT_END output_data | in_q0=[3, 4] in_q1=[30, 40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=0
+72 ns | TRANSFER_START value=22 transfer_delay=3 ns | in_q0=[3, 4] in_q1=[30, 40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=0
+90 ns | WAIT_END function_interval | in_q0=[3, 4] in_q1=[30, 40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=0
+90 ns | FUNCTION_START consume_in0=3 consume_in1=30 | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=1
+90 ns | WAIT_START function_interval | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=1
+90 ns | WAIT_START compute_latency inputs=(3, 30) delay=12 ns | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=1
+90 ns | WAIT_END input_space in1 value=50 | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=1
+90 ns | INPUT_RESERVED | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=0 input_reserved1=1 output_reserved=1
+90 ns | WAIT_END input_space in0 value=5 | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=0 input_reserved1=1 output_reserved=1
+90 ns | INPUT_RESERVED | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=1 input_reserved1=1 output_reserved=1
+90 ns | WAIT_START input_arrival_latency in1 value=50 delay=1 ns | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=1 input_reserved1=1 output_reserved=1
+90 ns | WAIT_START input_arrival_latency in0 value=5 delay=1 ns | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=1 input_reserved1=1 output_reserved=1
+91 ns | WAIT_END input_arrival_latency in1 value=50 | in_q0=[4] in_q1=[40] out_q=[22] input_reserved0=1 input_reserved1=1 output_reserved=1
+91 ns | INPUT_ARRIVED in1 value=50 | in_q0=[4] in_q1=[40, 50] out_q=[22] input_reserved0=1 input_reserved1=0 output_reserved=1
+91 ns | WAIT_END input_arrival_latency in0 value=5 | in_q0=[4] in_q1=[40, 50] out_q=[22] input_reserved0=1 input_reserved1=0 output_reserved=1
+91 ns | INPUT_ARRIVED in0 value=5 | in_q0=[4, 5] in_q1=[40, 50] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=1
+102 ns | WAIT_END compute_latency inputs=(3, 30) | in_q0=[4, 5] in_q1=[40, 50] out_q=[22] input_reserved0=0 input_reserved1=0 output_reserved=1
+102 ns | FUNCTION_FINISH produce_out=33 | in_q0=[4, 5] in_q1=[40, 50] out_q=[22, 33] input_reserved0=0 input_reserved1=0 output_reserved=0
+120 ns | WAIT_END function_interval | in_q0=[4, 5] in_q1=[40, 50] out_q=[22, 33] input_reserved0=0 input_reserved1=0 output_reserved=0
+120 ns | WAIT_START function_backpressure | in_q0=[4, 5] in_q1=[40, 50] out_q=[22, 33] input_reserved0=0 input_reserved1=0 output_reserved=0
+148 ns | TRANSFER_END value=22 | in_q0=[4, 5] in_q1=[40, 50] out_q=[22, 33] input_reserved0=0 input_reserved1=0 output_reserved=0
+148 ns | OUTPUT_CONSUMED value=22 | in_q0=[4, 5] in_q1=[40, 50] out_q=[33] input_reserved0=0 input_reserved1=0 output_reserved=0
+148 ns | TRANSFER_START value=33 transfer_delay=3 ns | in_q0=[4, 5] in_q1=[40, 50] out_q=[33] input_reserved0=0 input_reserved1=0 output_reserved=0
+148 ns | WAIT_END function_backpressure | in_q0=[4, 5] in_q1=[40, 50] out_q=[33] input_reserved0=0 input_reserved1=0 output_reserved=0
+148 ns | FUNCTION_START consume_in0=4 consume_in1=40 | in_q0=[5] in_q1=[50] out_q=[33] input_reserved0=0 input_reserved1=0 output_reserved=1
+148 ns | WAIT_START function_interval | in_q0=[5] in_q1=[50] out_q=[33] input_reserved0=0 input_reserved1=0 output_reserved=1
+148 ns | WAIT_START compute_latency inputs=(4, 40) delay=12 ns | in_q0=[5] in_q1=[50] out_q=[33] input_reserved0=0 input_reserved1=0 output_reserved=1
+160 ns | WAIT_END compute_latency inputs=(4, 40) | in_q0=[5] in_q1=[50] out_q=[33] input_reserved0=0 input_reserved1=0 output_reserved=1
+160 ns | FUNCTION_FINISH produce_out=44 | in_q0=[5] in_q1=[50] out_q=[33, 44] input_reserved0=0 input_reserved1=0 output_reserved=0
+178 ns | WAIT_END function_interval | in_q0=[5] in_q1=[50] out_q=[33, 44] input_reserved0=0 input_reserved1=0 output_reserved=0
+178 ns | WAIT_START function_backpressure | in_q0=[5] in_q1=[50] out_q=[33, 44] input_reserved0=0 input_reserved1=0 output_reserved=0
+251 ns | TRANSFER_END value=33 | in_q0=[5] in_q1=[50] out_q=[33, 44] input_reserved0=0 input_reserved1=0 output_reserved=0
+251 ns | OUTPUT_CONSUMED value=33 | in_q0=[5] in_q1=[50] out_q=[44] input_reserved0=0 input_reserved1=0 output_reserved=0
+251 ns | TRANSFER_START value=44 transfer_delay=3 ns | in_q0=[5] in_q1=[50] out_q=[44] input_reserved0=0 input_reserved1=0 output_reserved=0
+251 ns | WAIT_END function_backpressure | in_q0=[5] in_q1=[50] out_q=[44] input_reserved0=0 input_reserved1=0 output_reserved=0
+251 ns | FUNCTION_START consume_in0=5 consume_in1=50 | in_q0=[] in_q1=[] out_q=[44] input_reserved0=0 input_reserved1=0 output_reserved=1
+251 ns | WAIT_START function_interval | in_q0=[] in_q1=[] out_q=[44] input_reserved0=0 input_reserved1=0 output_reserved=1
+251 ns | WAIT_START compute_latency inputs=(5, 50) delay=12 ns | in_q0=[] in_q1=[] out_q=[44] input_reserved0=0 input_reserved1=0 output_reserved=1
+263 ns | WAIT_END compute_latency inputs=(5, 50) | in_q0=[] in_q1=[] out_q=[44] input_reserved0=0 input_reserved1=0 output_reserved=1
+263 ns | FUNCTION_FINISH produce_out=55 | in_q0=[] in_q1=[] out_q=[44, 55] input_reserved0=0 input_reserved1=0 output_reserved=0
+281 ns | WAIT_END function_interval | in_q0=[] in_q1=[] out_q=[44, 55] input_reserved0=0 input_reserved1=0 output_reserved=0
+281 ns | WAIT_START function_backpressure | in_q0=[] in_q1=[] out_q=[44, 55] input_reserved0=0 input_reserved1=0 output_reserved=0
+354 ns | TRANSFER_END value=44 | in_q0=[] in_q1=[] out_q=[44, 55] input_reserved0=0 input_reserved1=0 output_reserved=0
+354 ns | OUTPUT_CONSUMED value=44 | in_q0=[] in_q1=[] out_q=[55] input_reserved0=0 input_reserved1=0 output_reserved=0
+354 ns | TRANSFER_START value=55 transfer_delay=3 ns | in_q0=[] in_q1=[] out_q=[55] input_reserved0=0 input_reserved1=0 output_reserved=0
+354 ns | WAIT_END function_backpressure | in_q0=[] in_q1=[] out_q=[55] input_reserved0=0 input_reserved1=0 output_reserved=0
+354 ns | WAIT_START function_backpressure | in_q0=[] in_q1=[] out_q=[55] input_reserved0=0 input_reserved1=0 output_reserved=0
+457 ns | TRANSFER_END value=55 | in_q0=[] in_q1=[] out_q=[55] input_reserved0=0 input_reserved1=0 output_reserved=0
+457 ns | OUTPUT_CONSUMED value=55 | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+457 ns | WAIT_START output_data | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+457 ns | WAIT_END function_backpressure | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
+457 ns | WAIT_START function_backpressure | in_q0=[] in_q1=[] out_q=[] input_reserved0=0 input_reserved1=0 output_reserved=0
