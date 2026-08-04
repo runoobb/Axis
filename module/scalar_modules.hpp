@@ -86,44 +86,33 @@ public:
         in1.register_b_transport(this, &BinaryScalarOp::input1_b_transport);
 
         log_state("CREATE BinaryScalarOp");
-        SC_THREAD(function_thread);
+        SC_THREAD(function_trigger_thread);
         SC_THREAD(transfer_thread);
     }
 
 private:
-    struct PipeEntry {
-        T result;
-        sc_time ready_time;
-    };
 
     sc_time function_interval_;
     sc_time function_latency_;
     sc_time transfer_latency_;
     std::size_t function_pipe_capacity_;
+    std::size_t function_pipe_inflight_ = 0;
     Op op_;
     std::ofstream trace_;
 
     std::deque<T> in_latch_[2];
     std::deque<T> out_latch_;
-    std::deque<PipeEntry> function_pipe_;
+    std::deque<T> function_pipe_;
 
-    sc_event out_latch_produced_ev_;
-    sc_event out_latch_consumed_ev_;
-    sc_event in_latch_produced_ev_[2];
-    sc_event in_latch_consumed_ev_[2];
+    sc_event out_latch_produced_ev_; // outport valid signal
+    sc_event out_latch_consumed_ev_; // marks when the out_latch_ has been sampled and function pipe can advance
+    sc_event in_latch_produced_ev_[2]; // inport valid signal
+    sc_event in_latch_consumed_ev_[2]; // inport ready signal
 
     std::string function_pipe_trace() const
     {
         std::ostringstream oss;
-        oss << "[";
-        for (std::size_t i = 0; i < function_pipe_.size(); ++i) {
-            if (i != 0) {
-                oss << ", ";
-            }
-            oss << "{" << function_pipe_[i].result
-                << "@" << function_pipe_[i].ready_time << "}";
-        }
-        oss << "]";
+        oss << trace_deque(function_pipe_) << "/inflight=" << function_pipe_inflight_;
         return oss.str();
     }
 
@@ -188,54 +177,69 @@ private:
         trans.set_response_status(TLM_OK_RESPONSE);
     }
 
-    void function_thread()
+    void function_trigger_thread()
     {
         while (true) {
             wait(function_interval_);
 
-            if (!function_pipe_.empty() && function_pipe_.front().ready_time <= sc_time_stamp()) {
-                const T result = function_pipe_.front().result;
-                if (out_latch_.empty()) {
-                    out_latch_.push_back(result);
-                    function_pipe_.pop_front();
-                    {
-                        std::ostringstream oss;
-                        oss << "FUNCTION_FINISH result=" << result;
-                        log_state(oss.str());
-                    }
-                    out_latch_produced_ev_.notify(SC_ZERO_TIME);
-                } else {
-                    std::ostringstream oss;
-                    oss << "FUNCTION_READY_BLOCKED result=" << result;
-                    log_state(oss.str());
-                }
+            while (!can_trigger_function()) {
+                wait(in_latch_produced_ev_[0] | in_latch_produced_ev_[1] | out_latch_consumed_ev_);
             }
 
-            if (can_trigger_function()) {
-                T a = in_latch_[0].front();
-                T b = in_latch_[1].front();
-                in_latch_[0].pop_front();
-                in_latch_[1].pop_front();
-                in_latch_consumed_ev_[0].notify(SC_ZERO_TIME);
-                in_latch_consumed_ev_[1].notify(SC_ZERO_TIME);
+            T a = in_latch_[0].front();
+            T b = in_latch_[1].front();
+            in_latch_[0].pop_front();
+            in_latch_[1].pop_front();
+            in_latch_consumed_ev_[0].notify(SC_ZERO_TIME);
+            in_latch_consumed_ev_[1].notify(SC_ZERO_TIME);
 
-                T result = op_(a, b);
-                function_pipe_.push_back({result, sc_time_stamp() + function_latency_});
+            T result = op_(a, b);
+            function_pipe_.push_back(result);
+            ++function_pipe_inflight_;
+            {
                 std::ostringstream oss;
                 oss << "FUNCTION_START in0=" << a << " in1=" << b
                     << " result=" << result
-                    << " ready_time=" << function_pipe_.back().ready_time;
+                    << " latency=" << function_latency_;
                 log_state(oss.str());
             }
+
+            sc_spawn(sc_bind(&BinaryScalarOp::function_pipe_thread, this));
         }
+    }
+
+    void function_pipe_thread()
+    {
+        wait(function_latency_);
+
+        // Dequeue the result befor wait(out_latch_consumed_ev_) to keep order between different function_pipe_thread()
+        T result = function_pipe_.front();
+        function_pipe_.pop_front();
+
+        while (!can_deque_function()) {
+            {
+                std::ostringstream oss;
+                oss << "FUNCTION_READY_BLOCKED result=" << function_pipe_.front();
+                log_state(oss.str());
+            }
+            wait(out_latch_consumed_ev_);
+        }
+
+
+        --function_pipe_inflight_;
+        out_latch_.push_back(result);
+        {
+            std::ostringstream oss;
+            oss << "FUNCTION_FINISH result=" << result;
+            log_state(oss.str());
+        }
+        out_latch_produced_ev_.notify(SC_ZERO_TIME);
     }
 
     void transfer_thread()
     {
         while (true) {
-            while (out_latch_.empty()) {
-                wait(out_latch_produced_ev_);
-            }
+            wait(out_latch_produced_ev_);
 
             T value = out_latch_.front();
             unsigned char data[sizeof(T)];
@@ -282,7 +286,11 @@ private:
     {
         return !in_latch_[0].empty()
             && !in_latch_[1].empty()
-            && function_pipe_.size() < function_pipe_capacity_;
+            && function_pipe_inflight_ < function_pipe_capacity_;
+    }
+
+    bool can_deque_function() const{
+        return out_latch_.empty() && function_pipe_inflight_ > 0;
     }
 
     bool can_accept(int port_id) const
