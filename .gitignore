@@ -4,3 +4,4 @@
 build/
 CMakeFiles/
 compile.md
+*.txt
