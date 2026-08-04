@@ -1,3 +1,0 @@
-/home/kaywang/workspace/Axis/CMakeFiles/axis_test.dir
-/home/kaywang/workspace/Axis/CMakeFiles/edit_cache.dir
-/home/kaywang/workspace/Axis/CMakeFiles/rebuild_cache.dir

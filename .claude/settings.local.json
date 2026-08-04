@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(wsl bash:*)",
-      "Bash(wsl:*)"
-    ]
-  }
-}

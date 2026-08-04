@@ -1,21 +1,16 @@
-0 s | CREATE ScalarSource
-0 s | WAIT_START source_interval next_value=1 delay=4 ns
-4 ns | WAIT_END source_interval next_value=1
-4 ns | OUTPUT_TRANSFER_START value=1 transfer_delay=1 ns
-4 ns | OUTPUT_TRANSFER_END value=1
-4 ns | WAIT_START source_interval next_value=2 delay=4 ns
-8 ns | WAIT_END source_interval next_value=2
-8 ns | OUTPUT_TRANSFER_START value=2 transfer_delay=1 ns
-8 ns | OUTPUT_TRANSFER_END value=2
-8 ns | WAIT_START source_interval next_value=3 delay=4 ns
-12 ns | WAIT_END source_interval next_value=3
-12 ns | OUTPUT_TRANSFER_START value=3 transfer_delay=1 ns
-30 ns | OUTPUT_TRANSFER_END value=3
-30 ns | WAIT_START source_interval next_value=4 delay=4 ns
-34 ns | WAIT_END source_interval next_value=4
-34 ns | OUTPUT_TRANSFER_START value=4 transfer_delay=1 ns
-60 ns | OUTPUT_TRANSFER_END value=4
-60 ns | WAIT_START source_interval next_value=5 delay=4 ns
-64 ns | WAIT_END source_interval next_value=5
-64 ns | OUTPUT_TRANSFER_START value=5 transfer_delay=1 ns
-90 ns | OUTPUT_TRANSFER_END value=5
+0 s          | CREATE ScalarSource                                      | output_latch=[]
+4 ns         | GENERATE value=1                                         | output_latch=[1]
+4 ns         | TRANSFER_START value=1 delay=1 ns                        | output_latch=[1]
+5 ns         | TRANSFER_END value=1                                     | output_latch=[]
+9 ns         | GENERATE value=2                                         | output_latch=[2]
+9 ns         | TRANSFER_START value=2 delay=1 ns                        | output_latch=[2]
+30 ns        | TRANSFER_END value=2                                     | output_latch=[]
+34 ns        | GENERATE value=3                                         | output_latch=[3]
+34 ns        | TRANSFER_START value=3 delay=1 ns                        | output_latch=[3]
+60 ns        | TRANSFER_END value=3                                     | output_latch=[]
+64 ns        | GENERATE value=4                                         | output_latch=[4]
+64 ns        | TRANSFER_START value=4 delay=1 ns                        | output_latch=[4]
+90 ns        | TRANSFER_END value=4                                     | output_latch=[]
+94 ns        | GENERATE value=5                                         | output_latch=[5]
+94 ns        | TRANSFER_START value=5 delay=1 ns                        | output_latch=[5]
+120 ns       | TRANSFER_END value=5                                     | output_latch=[]
