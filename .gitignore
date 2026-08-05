@@ -5,3 +5,4 @@ build/
 CMakeFiles/
 compile.md
 *.txt
+!CMakeLists.txt

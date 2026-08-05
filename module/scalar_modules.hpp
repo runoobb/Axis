@@ -14,9 +14,11 @@
 #include <fstream>
 #include <functional>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -51,42 +53,98 @@ inline void trace_log_prefix(std::ofstream& trace, const std::string& event)
           << " | " << std::setw(56) << event << std::right;
 }
 
+template <typename>
+struct dependent_false : std::false_type {};
+
+template <typename T>
+struct function_traits;
+
+template <typename R, typename... Args>
+struct function_traits<R (*)(Args...)> {
+    static constexpr std::size_t arity = sizeof...(Args);
+};
+
+template <typename C, typename R, typename... Args>
+struct function_traits<R (C::*)(Args...) const> {
+    static constexpr std::size_t arity = sizeof...(Args);
+};
+
+template <typename C, typename R, typename... Args>
+struct function_traits<R (C::*)(Args...)> {
+    static constexpr std::size_t arity = sizeof...(Args);
+};
+
+template <typename Op, typename = void>
+struct callable_arity {
+    static_assert(dependent_false<Op>::value,
+        "ScalarOp requires a non-overloaded, non-generic callable with detectable arity");
+};
+
+template <typename Op>
+struct callable_arity<Op, std::void_t<decltype(&std::remove_reference_t<Op>::operator())>>
+    : function_traits<decltype(&std::remove_reference_t<Op>::operator())> {};
+
+template <typename R, typename... Args>
+struct callable_arity<R (*)(Args...), void> : function_traits<R (*)(Args...)> {};
+
+template <typename Op>
+inline constexpr std::size_t callable_arity_v = callable_arity<Op>::arity;
+
 template <typename T, typename Op = std::plus<T>>
-class BinaryScalarOp : public sc_module {
+class ScalarOp : public sc_module {
 public:
-    tlm_utils::simple_target_socket<BinaryScalarOp> in0;
-    tlm_utils::simple_target_socket<BinaryScalarOp> in1;
-    tlm_utils::simple_initiator_socket<BinaryScalarOp> out;
+    sc_vector<tlm_utils::simple_target_socket_tagged<ScalarOp>> in;
+    tlm_utils::simple_initiator_socket<ScalarOp> out;
 
-    SC_HAS_PROCESS(BinaryScalarOp);
+    SC_HAS_PROCESS(ScalarOp);
 
-    BinaryScalarOp(
+    ScalarOp(
         sc_module_name name,
+        std::size_t input_count,
         sc_time function_interval,
         sc_time function_latency,
         std::size_t function_pipe_capacity,
         sc_time transfer_latency,
         Op op = Op{})
         : sc_module(name),
-          in0("in0"),
-          in1("in1"),
+          in("in"),
           out("out"),
           function_interval_(function_interval),
           function_latency_(function_latency),
           transfer_latency_(transfer_latency),
           function_pipe_capacity_(function_pipe_capacity),
           op_(op),
-          trace_(std::string(this->name()) + ".txt")
+          trace_(std::string(this->name()) + ".txt"),
+          in_latch_(input_count)
     {
+        if (input_count == 0) {
+            throw std::invalid_argument("input count must be greater than zero");
+        }
+
+        if (input_count != callable_arity_v<Op>) {
+            std::ostringstream oss;
+            oss << "input count " << input_count
+                << " does not match callable arity " << callable_arity_v<Op>;
+            throw std::invalid_argument(oss.str());
+        }
+
         if (function_pipe_capacity_ == 0) {
             throw std::invalid_argument("function pipeline capacity must be greater than zero");
         }
 
-        in0.register_b_transport(this, &BinaryScalarOp::input0_b_transport);
-        in1.register_b_transport(this, &BinaryScalarOp::input1_b_transport);
+        in.init(input_count);
+        for (std::size_t i = 0; i < input_count; ++i) {
+            in[i].register_b_transport(this, &ScalarOp::input_b_transport, static_cast<int>(i));
+            in_latch_produced_ev_.push_back(std::make_unique<sc_event>());
+            in_latch_consumed_ev_.push_back(std::make_unique<sc_event>());
+        }
 
-        log_state("CREATE BinaryScalarOp");
-        SC_THREAD(function_trigger_thread);
+        {
+            std::ostringstream oss;
+            oss << "CREATE ScalarOp inputs=" << input_count;
+            log_state(oss.str());
+        }
+        SC_THREAD(function_enque_thread);
         SC_THREAD(transfer_thread);
     }
 
@@ -100,14 +158,14 @@ private:
     Op op_;
     std::ofstream trace_;
 
-    std::deque<T> in_latch_[2];
+    std::vector<std::deque<T>> in_latch_;
     std::deque<T> out_latch_;
     std::deque<T> function_pipe_;
 
     sc_event out_latch_produced_ev_; // outport valid signal
     sc_event out_latch_consumed_ev_; // marks when the out_latch_ has been sampled and function pipe can advance
-    sc_event in_latch_produced_ev_[2]; // inport valid signal
-    sc_event in_latch_consumed_ev_[2]; // inport ready signal
+    std::vector<std::unique_ptr<sc_event>> in_latch_produced_ev_; // inport valid signal
+    std::vector<std::unique_ptr<sc_event>> in_latch_consumed_ev_; // inport ready signal
 
     std::string function_pipe_trace() const
     {
@@ -119,26 +177,24 @@ private:
     void log_state(const std::string& event)
     {
         trace_log_prefix(trace_, event);
-        trace_ << " | " << std::left
-               << std::setw(24) << ("in_latch0=" + trace_deque(in_latch_[0]))
-               << std::setw(24) << ("in_latch1=" + trace_deque(in_latch_[1]))
-               << std::setw(36) << ("function_pipe=" + function_pipe_trace())
+        trace_ << " | " << std::left;
+        for (std::size_t i = 0; i < in_latch_.size(); ++i) {
+            std::ostringstream label;
+            label << "in_latch" << i << "=" << trace_deque(in_latch_[i]);
+            trace_ << std::setw(24) << label.str();
+        }
+        trace_ << std::setw(36) << ("function_pipe=" + function_pipe_trace())
                << "out_latch=" << trace_deque(out_latch_)
                << std::right << std::endl;
     }
 
-    void input0_b_transport(tlm_generic_payload& trans, sc_time& delay)
-    {
-        input_b_transport(0, trans, delay);
-    }
-
-    void input1_b_transport(tlm_generic_payload& trans, sc_time& delay)
-    {
-        input_b_transport(1, trans, delay);
-    }
-
     void input_b_transport(int port_id, tlm_generic_payload& trans, sc_time& delay)
     {
+        if (port_id < 0 || static_cast<std::size_t>(port_id) >= in_latch_.size()) {
+            trans.set_response_status(TLM_ADDRESS_ERROR_RESPONSE);
+            return;
+        }
+
         if (trans.get_command() != TLM_WRITE_COMMAND) {
             trans.set_response_status(TLM_COMMAND_ERROR_RESPONSE);
             return;
@@ -160,11 +216,11 @@ private:
         wait(delay);
         delay = SC_ZERO_TIME;
 
-        while (!can_accept(port_id)) {
+        while (!can_accept(static_cast<std::size_t>(port_id))) {
             std::ostringstream oss;
             oss << "INPUT_WAIT in" << port_id << " value=" << value;
             log_state(oss.str());
-            wait(in_latch_consumed_ev_[port_id]);
+            wait(*in_latch_consumed_ev_[port_id]);
         }
 
         in_latch_[port_id].push_back(value);
@@ -173,59 +229,78 @@ private:
             oss << "INPUT_ACCEPTED in" << port_id << " value=" << value;
             log_state(oss.str());
         }
-        in_latch_produced_ev_[port_id].notify(SC_ZERO_TIME);
+        in_latch_produced_ev_[port_id]->notify(SC_ZERO_TIME);
         trans.set_response_status(TLM_OK_RESPONSE);
     }
 
-    void function_trigger_thread()
+    void function_enque_thread()
     {
         while (true) {
             wait(function_interval_);
 
-            while (!can_trigger_function()) {
-                wait(in_latch_produced_ev_[0] | in_latch_produced_ev_[1] | out_latch_consumed_ev_);
+            while (!can_enque()) {
+                sc_event_or_list wait_events;
+                for (const auto& event : in_latch_produced_ev_) {
+                    wait_events |= *event;
+                }
+                wait_events |= out_latch_consumed_ev_;
+                wait(wait_events);
             }
 
-            T a = in_latch_[0].front();
-            T b = in_latch_[1].front();
-            in_latch_[0].pop_front();
-            in_latch_[1].pop_front();
-            in_latch_consumed_ev_[0].notify(SC_ZERO_TIME);
-            in_latch_consumed_ev_[1].notify(SC_ZERO_TIME);
+            std::vector<T> inputs;
+            inputs.reserve(in_latch_.size());
+            for (std::size_t i = 0; i < in_latch_.size(); ++i) {
+                inputs.push_back(in_latch_[i].front());
+                in_latch_[i].pop_front();
+                in_latch_consumed_ev_[i]->notify(SC_ZERO_TIME);
+            }
 
-            T result = op_(a, b);
+            T result = invoke_op(inputs, std::make_index_sequence<callable_arity_v<Op>>{});
             function_pipe_.push_back(result);
             ++function_pipe_inflight_;
             {
                 std::ostringstream oss;
-                oss << "FUNCTION_START in0=" << a << " in1=" << b
+                oss << "FUNCTION_START inputs=" << trace_deque(inputs)
                     << " result=" << result
                     << " latency=" << function_latency_;
                 log_state(oss.str());
             }
 
-            sc_spawn(sc_bind(&BinaryScalarOp::function_pipe_thread, this));
+            sc_spawn(sc_bind(&ScalarOp::function_deque_thread, this));
         }
     }
 
-    void function_pipe_thread()
+    template <std::size_t... I>
+    T invoke_op(const std::vector<T>& inputs, std::index_sequence<I...>)
+    {
+        return static_cast<T>(op_(inputs[I]...));
+    }
+
+    void function_deque_thread()
     {
         wait(function_latency_);
-
-        // Dequeue the result befor wait(out_latch_consumed_ev_) to keep order between different function_pipe_thread()
-        T result = function_pipe_.front();
-        function_pipe_.pop_front();
-
-        while (!can_deque_function()) {
+        
+        /*
+        cases when backpressure occurs: adjacent interval function_deque_thread spawned by sc_spawn() is waked up 
+        by same out_latch_consumed_ev_ event
+        */ 
+        while (!can_deque()) {
             {
                 std::ostringstream oss;
                 oss << "FUNCTION_READY_BLOCKED result=" << function_pipe_.front();
                 log_state(oss.str());
             }
             wait(out_latch_consumed_ev_);
+            /*
+            If current function_deque_thread fail to acquire out_latch_, it need wait another function_interval_ to  
+            simulate pipeline stall due to backpressure.
+            Due to SystemC is not truly concurrent, out_latch_ do not need to be set to mutex.          
+            */ 
+            if(!can_deque()) wait(1); // set pipeline latency as 1ns
         }
 
-
+        T result = function_pipe_.front();
+        function_pipe_.pop_front();
         --function_pipe_inflight_;
         out_latch_.push_back(result);
         {
@@ -282,22 +357,33 @@ private:
         }
     }
 
-    bool can_trigger_function() const
+    bool can_enque() const
     {
-        return !in_latch_[0].empty()
-            && !in_latch_[1].empty()
-            && function_pipe_inflight_ < function_pipe_capacity_;
+        if (function_pipe_inflight_ >= function_pipe_capacity_) {
+            return false;
+        }
+
+        for (const auto& latch : in_latch_) {
+            if (latch.empty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    bool can_deque_function() const{
+    bool can_deque() const
+    {
         return out_latch_.empty() && function_pipe_inflight_ > 0;
     }
 
-    bool can_accept(int port_id) const
+    bool can_accept(std::size_t port_id) const
     {
         return in_latch_[port_id].empty();
     }
 };
+
+template <typename T, typename Op = std::plus<T>>
+using BinaryScalarOp = ScalarOp<T, Op>;
 
 class ScalarSource : public sc_module {
 public:
