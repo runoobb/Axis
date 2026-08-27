@@ -8,13 +8,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(SYSTEMC_HOME /opt/systemc CACHE PATH "SystemC installation prefix")
 
-add_executable(axis_test
-    test/main.cpp
-)
-
-target_include_directories(axis_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/module
+file(GLOB AXIS_SOURCES CONFIGURE_DEPENDS src/*.cpp)
+add_library(axis_hw ${AXIS_SOURCES})
+target_include_directories(axis_hw PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${SYSTEMC_HOME}/include
 )
-target_link_directories(axis_test PRIVATE ${SYSTEMC_HOME}/lib)
-target_link_libraries(axis_test PRIVATE systemc pthread)
+target_link_directories(axis_hw PUBLIC ${SYSTEMC_HOME}/lib)
+target_link_libraries(axis_hw PUBLIC systemc pthread)
+
+add_executable(axis_test test/main.cpp)
+target_link_libraries(axis_test PRIVATE axis_hw)

@@ -1,121 +1,41 @@
-#include "scalar_modules.hpp"
+#include "alu.hpp"
+#include "fifo.hpp"
+#include "scalar_sink.hpp"
+#include "scalar_source.hpp"
 
-struct Double {
-    int operator()(int x) const { return x * 2; }
-};
+int sc_main(int, char**) {
+    const std::vector<int> expected{11, 22, 33, 44, 55};
+    const sc_core::sc_time clock_period(1, sc_core::SC_NS);
 
-struct FifoPassThrough {
-    int operator()(int x) const { return x; }
-};
+    ScalarSource op1_src("op1_src", {1, 2, 3, 4, 5}, 4, clock_period, {1});
+    ScalarSource op2_src(
+        "op2_src", {10, 20, 30, 40, 50}, 7, clock_period, {1});
+    FIFO<int> fifo("fifo", 2, clock_period, {2});
+    ALU<int, std::plus<int>> alu(
+        "alu", 30, 2, clock_period, {3, 7, 5, 5}, std::plus<int>{});
+    ScalarSink fast_sink("fast_sink", 2, 10, clock_period, expected);
+    ScalarSink slow_sink("slow_sink", 1, 100, clock_period, expected);
+    ScalarSink audit_sink(
+        "audit_sink", 2, 2, 10, clock_period, {expected, expected});
 
-struct Add3 {
-    int operator()(int a, int b, int c) const { return a + b + c; }
-};
+    op1_src.out[0].bind(alu.in[0]);
+    op2_src.out[0].bind(fifo.in);
+    fifo.out[0].bind(alu.in[1]);
+    alu.out[0].bind(fast_sink.in[0]);
+    alu.out[1].bind(slow_sink.in[0]);
+    alu.out[2].bind(audit_sink.in[0]);
+    alu.out[3].bind(audit_sink.in[1]);
 
-int sc_main(int, char**)
-{
-    ScalarSource add_src0(
-        "add_src0",
-        {1, 2, 3, 4, 5},
-        sc_time(4, SC_NS),
-        sc_time(1, SC_NS));
-    ScalarSource add_src1(
-        "add_src1",
-        {10, 20, 30, 40, 50},
-        sc_time(7, SC_NS),
-        sc_time(1, SC_NS));
-    ScalarOp<int, std::plus<int>> add2(
-        "add2",
-        2,                  // input port number
-        sc_time(30, SC_NS), // function interval
-        sc_time(12, SC_NS), // function latency
-        2,                  // function pipeline capacity
-        sc_time(3, SC_NS)); // transfer latency
-    ScalarSink add_sink(
-        "add_sink",
-        1,
-        sc_time(100, SC_NS),
-        {11, 22, 33, 44, 55});
+    sc_core::sc_start(sc_core::sc_time(3000, sc_core::SC_NS));
 
-    ScalarSource double_src(
-        "double_src",
-        {1, 2, 3, 4, 5},
-        sc_time(5, SC_NS),
-        sc_time(1, SC_NS));
-    ScalarOp<int, Double> double_op(
-        "double_op",
-        1,
-        sc_time(25, SC_NS),
-        sc_time(10, SC_NS),
-        2,
-        sc_time(3, SC_NS));
-    ScalarSink double_sink(
-        "double_sink",
-        1,
-        sc_time(90, SC_NS),
-        {2, 4, 6, 8, 10});
+    if (!fast_sink.complete() || !slow_sink.complete()
+        || !audit_sink.complete(0) || !audit_sink.complete(1)) {
+        SC_REPORT_ERROR("sc_main",
+                        "one or more broadcast sink sequences are incomplete");
+    }
 
-    ScalarSource fifo_src(
-        "fifo_src",
-        {5, 4, 3, 2, 1},
-        sc_time(5, SC_NS),
-        sc_time(1, SC_NS));
-    ScalarOp<int, FifoPassThrough> fifo_op(
-        "fifo_op",
-        1,
-        sc_time(20, SC_NS),
-        sc_time(8, SC_NS),
-        2,
-        sc_time(3, SC_NS));
-    ScalarSink fifo_sink(
-        "fifo_sink",
-        1,
-        sc_time(80, SC_NS),
-        {5, 4, 3, 2, 1});
-
-    ScalarSource add3_src0(
-        "add3_src0",
-        {1, 2, 3, 4, 5},
-        sc_time(4, SC_NS),
-        sc_time(1, SC_NS));
-    ScalarSource add3_src1(
-        "add3_src1",
-        {10, 20, 30, 40, 50},
-        sc_time(6, SC_NS),
-        sc_time(1, SC_NS));
-    ScalarSource add3_src2(
-        "add3_src2",
-        {100, 200, 300, 400, 500},
-        sc_time(8, SC_NS),
-        sc_time(1, SC_NS));
-    ScalarOp<int, Add3> add3(
-        "add3",
-        3,
-        sc_time(35, SC_NS),
-        sc_time(14, SC_NS),
-        2,
-        sc_time(3, SC_NS));
-    ScalarSink add3_sink(
-        "add3_sink",
-        1,
-        sc_time(110, SC_NS),
-        {111, 222, 333, 444, 555});
-
-    add_src0.out.bind(add2.in[0]);
-    add_src1.out.bind(add2.in[1]);
-    add2.out.bind(add_sink.in);
-
-    double_src.out.bind(double_op.in[0]);
-    double_op.out.bind(double_sink.in);
-
-    fifo_src.out.bind(fifo_op.in[0]);
-    fifo_op.out.bind(fifo_sink.in);
-
-    add3_src0.out.bind(add3.in[0]);
-    add3_src1.out.bind(add3.in[1]);
-    add3_src2.out.bind(add3.in[2]);
-    add3.out.bind(add3_sink.in);
-
-    sc_start(sc_time(3000, SC_NS));
-    return 0;
+    return sc_core::sc_report_handler::get_count(sc_core::SC_ERROR) == 0
+                   && sc_core::sc_report_handler::get_count(sc_core::SC_FATAL) == 0
+               ? 0
+               : 1;
 }
