@@ -47,7 +47,7 @@ public:
         if (output_count_ == 0) {
             throw std::invalid_argument("ALU requires at least one output");
         }
-        logger_.configure(this->name(), log_options);
+        logger_.configure(this->name(), log_options, clock_period_);
 
         SC_METHOD(hw_pipe_sim_);
         sensitive << clk.pos();
@@ -65,7 +65,6 @@ private:
     Op op_;
     std::vector<std::optional<T>> hw_pipe_;
     ModuleLogger logger_;
-    std::size_t log_cycle_{0};
     std::vector<std::size_t> input_cooldown_remaining_;
 
     void hw_pipe_sim_() {
@@ -80,6 +79,9 @@ private:
         }
 
         for (std::size_t index = function_latency_ - 1; index > 0; --index) {
+            if (do_deque && index == function_latency_ - 1) {
+                continue;
+            }
             if (!hw_pipe_[index] && hw_pipe_[index - 1]) {
                 hw_pipe_[index] = std::move(hw_pipe_[index - 1]);
                 hw_pipe_[index - 1].reset();
@@ -102,12 +104,19 @@ private:
         }
 
         tds_valid.write(hw_pipe_.back().has_value());
+        if (hw_pipe_.back()) {
+            for (auto& data : out_data) {
+                data.write(*hw_pipe_.back());
+            }
+        }
+        const bool inputs_can_commit = !hw_pipe_.front().has_value()
+                                       && all_inputs_valid()
+                                       && all_input_cooldowns_clear();
         for (std::size_t port = 0; port < tus_ready.size(); ++port) {
-            tus_ready[port].write(!hw_pipe_.front().has_value()
-                                  && input_cooldown_remaining_[port] == 0);
+            tus_ready[port].write(inputs_can_commit);
         }
 
-        logger_.log_pipeline(sc_core::sc_time_stamp(), ++log_cycle_, hw_pipe_, do_deque, do_enque);
+        logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
     }
 
     bool all_downstream_ready() const {
@@ -130,6 +139,14 @@ private:
 
     bool all_inputs_handshaking() const {
         return all_inputs_valid() && all_inputs_ready();
+    }
+
+    bool all_input_cooldowns_clear() const {
+        return std::all_of(input_cooldown_remaining_.begin(),
+                           input_cooldown_remaining_.end(),
+                           [](std::size_t cooldown) {
+                               return cooldown == 0;
+                           });
     }
 
 };

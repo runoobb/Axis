@@ -19,6 +19,8 @@
     ```
     /opt/systemc
     ```
+3. **示例系统正确性验证**：
+    - `test/main.cpp` 示例系统的正确性必须从导出的 sink log/text 文件检查，不应依赖 `ScalarSink::complete()` 或任何 completion-like API。
 
 # 派生硬件模块的开发原则
 进行实现时，**必须**严格遵守以下规范：
@@ -95,3 +97,4 @@
 - 为了构建 `test/main.cpp` 中的测试系统，需要生成source和sink两个类，这两个类无需从 `BaseHW` 派生，独立开发。
 - source类需要具有产生数据 `interval_` 特性，并采用ready-valid握手机制。source应使用模块级单一 `tds_valid`，先持有待发送值并拉高valid，仅在时钟采样点确认所有下游ready后，才向所有下游数据端口写入该值。
 - sink类只需要具有消费数据 `interval_` 特性，并采用ready-valid握手机制。sink应由单一时钟线程拥有输入 FIFO 读取和消费状态更新，ready信号只展示容量/冷却状态。
+- sink类不应暴露 completion API，应输出稳定的已消费值记录（如端口、序号、实际值、期望值、匹配结果）供外部验证。

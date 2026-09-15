@@ -16,10 +16,16 @@ struct ModuleLogOptions {
 
 class ModuleLogger {
 public:
-    void configure(const char* module_name, const ModuleLogOptions& options) {
+    void configure(const char* module_name,
+                   const ModuleLogOptions& options,
+                   sc_core::sc_time clock_period) {
         enabled_ = options.enabled;
+        clock_period_ = clock_period;
         if (!enabled_) {
             return;
+        }
+        if (clock_period_ <= sc_core::SC_ZERO_TIME) {
+            SC_REPORT_FATAL(module_name, "log clock period must be positive");
         }
 
         const std::string path = options.file_path.empty() ? std::string(module_name) + ".txt" : options.file_path;
@@ -29,22 +35,21 @@ public:
         }
 
         file_ << "cycle      time       dequeued enqueued pipe\n";
+        file_.flush();
     }
 
     bool enabled() const {
         return enabled_;
     }
 
-    template <typename Time, typename Pipe>
-    void log_pipeline(const Time& time,
-                      std::size_t cycle,
-                      const Pipe& pipe,
-                      bool dequeued,
-                      bool enqueued) {
+    template <typename Pipe>
+    void log_pipeline(const Pipe& pipe, bool dequeued, bool enqueued) {
         if (!enabled_) {
             return;
         }
 
+        const sc_core::sc_time time = sc_core::sc_time_stamp();
+        const auto cycle = static_cast<std::size_t>(time / clock_period_);
         file_ << "cycle=" << std::setw(6) << cycle
               << " time=" << std::setw(10) << time
               << " dequeued=" << (dequeued ? 1 : 0)
@@ -59,10 +64,44 @@ public:
         }
 
         file_ << "]\n";
+        file_.flush();
+    }
+
+    template <typename T>
+    void log_sink_consumed(std::size_t port,
+                           std::size_t index,
+                           const T& value,
+                           const T& expected,
+                           bool match) {
+        if (!enabled_) {
+            return;
+        }
+
+        file_ << "sink port=" << port
+              << " index=" << index
+              << " value=" << value
+              << " expected=" << expected
+              << " match=" << (match ? 1 : 0) << '\n';
+        file_.flush();
+    }
+
+    template <typename T>
+    void log_sink_unexpected(std::size_t port, std::size_t index, const T& value) {
+        if (!enabled_) {
+            return;
+        }
+
+        file_ << "sink port=" << port
+              << " index=" << index
+              << " value=" << value
+              << " expected=<none>"
+              << " match=0\n";
+        file_.flush();
     }
 
 private:
     bool enabled_{false};
+    sc_core::sc_time clock_period_{sc_core::SC_ZERO_TIME};
     std::ofstream file_;
 
     template <typename T>

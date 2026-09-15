@@ -4,9 +4,114 @@
 #include "scalar_sink.hpp"
 #include "scalar_source.hpp"
 
+#include <algorithm>
+#include <cstddef>
+#include <fstream>
 #include <functional>
+#include <sstream>
+#include <string>
 #include <systemc>
 #include <vector>
+
+namespace {
+
+void report_sink_log_error(const std::string& file_path, const std::string& detail) {
+    std::ostringstream message;
+    message << file_path << ": " << detail;
+    SC_REPORT_ERROR("sc_main", message.str().c_str());
+}
+
+template <typename Value>
+bool parse_prefixed(const std::string& token, const char* prefix, Value& value) {
+    const std::string prefix_text(prefix);
+    if (token.rfind(prefix_text, 0) != 0) {
+        return false;
+    }
+
+    std::istringstream parser(token.substr(prefix_text.size()));
+    parser >> value;
+    return parser && parser.eof();
+}
+
+std::vector<std::vector<int>> read_sink_log(const std::string& file_path, std::size_t port_count) {
+    std::ifstream file(file_path);
+    std::vector<std::vector<int>> values(port_count);
+    if (!file) {
+        report_sink_log_error(file_path, "missing sink log file");
+        return values;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.rfind("sink ", 0) != 0) {
+            continue;
+        }
+
+        std::istringstream parser(line);
+        std::string sink_token;
+        std::string port_token;
+        std::string index_token;
+        std::string value_token;
+        std::string expected_token;
+        std::string match_token;
+        std::string extra_token;
+        if (!(parser >> sink_token >> port_token >> index_token >> value_token >> expected_token >> match_token)
+            || parser >> extra_token) {
+            report_sink_log_error(file_path, "malformed sink record: " + line);
+            continue;
+        }
+
+        std::size_t port = 0;
+        std::size_t index = 0;
+        int value = 0;
+        int expected = 0;
+        int match = 0;
+        if (sink_token != "sink" || !parse_prefixed(port_token, "port=", port)
+            || !parse_prefixed(index_token, "index=", index)
+            || !parse_prefixed(value_token, "value=", value)
+            || !parse_prefixed(expected_token, "expected=", expected)
+            || !parse_prefixed(match_token, "match=", match)) {
+            report_sink_log_error(file_path, "malformed sink record: " + line);
+            continue;
+        }
+        if (port >= port_count) {
+            report_sink_log_error(file_path, "extra sink port record: " + line);
+            continue;
+        }
+        if (index != values[port].size()) {
+            report_sink_log_error(file_path, "out-of-order or missing sink index: " + line);
+        }
+        if (match != 1 || value != expected) {
+            report_sink_log_error(file_path, "mismatched sink record: " + line);
+        }
+        values[port].push_back(value);
+    }
+
+    return values;
+}
+
+void verify_sink_log(const std::string& file_path, const std::vector<std::vector<int>>& expected) {
+    const auto values = read_sink_log(file_path, expected.size());
+    for (std::size_t port = 0; port < expected.size(); ++port) {
+        if (values[port].size() < expected[port].size()) {
+            report_sink_log_error(file_path, "missing consumed values on port " + std::to_string(port));
+        }
+        if (values[port].size() > expected[port].size()) {
+            report_sink_log_error(file_path, "extra consumed values on port " + std::to_string(port));
+        }
+        const std::size_t count = std::min(values[port].size(), expected[port].size());
+        for (std::size_t index = 0; index < count; ++index) {
+            if (values[port][index] != expected[port][index]) {
+                std::ostringstream message;
+                message << "port " << port << " index " << index << " expected "
+                        << expected[port][index] << " but found " << values[port][index];
+                report_sink_log_error(file_path, message.str());
+            }
+        }
+    }
+}
+
+} // namespace
 
 int sc_main(int, char**) {
     const std::vector<int> expected{11, 22, 33, 44, 55};
@@ -108,10 +213,9 @@ int sc_main(int, char**) {
 
     sc_core::sc_start(sc_core::sc_time(10000, sc_core::SC_NS));
 
-    if (!fast_sink.complete() || !slow_sink.complete()
-        || !audit_sink.complete(0) || !audit_sink.complete(1)) {
-        SC_REPORT_ERROR("sc_main", "one or more broadcast sink sequences are incomplete");
-    }
+    verify_sink_log(fast_sink_log.file_path, {expected});
+    verify_sink_log(slow_sink_log.file_path, {expected});
+    verify_sink_log(audit_sink_log.file_path, {expected, expected});
 
     return sc_core::sc_report_handler::get_count(sc_core::SC_ERROR) == 0
                    && sc_core::sc_report_handler::get_count(sc_core::SC_FATAL) == 0
