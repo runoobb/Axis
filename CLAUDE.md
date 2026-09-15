@@ -4,7 +4,7 @@
 1. **环境隔离约束**：
    - 切勿在 Windows PowerShell CLI 中直接运行WSL中任何可执行文件。
    - **允许**在 Windows PowerShell CLI 中直接读写WSL中的文件。
-   - 编译与运行、git的相关命令必须通过WSL环境中的Bash执行, 在Windows PowerShell CLI使用`wsl bash lc '' `对相关命令进行包装。
+   - 编译与运行、git的相关命令必须通过WSL环境中的Bash执行, 在Windows PowerShell CLI使用`wsl bash -lc ''`对相关命令进行包装。
 
 # 编译与验证规范 (Build & Verification Guidelines)
 
@@ -21,261 +21,110 @@
     ```
 
 # 派生硬件模块的开发原则
-进行实现时，**必须**严格遵守以下规范
-    - 继承BaseHW类
-    - 实现BaseHW类中function_enque_thread, function_deque_thread 和 transfer_thread的接口函数，这三个函数声明为overide
-    - can_enque() can_deque() can_accept()这三个函数由派生类独立实现
-    - 继承BaseHW类function_latency_, function_interval_, transfer_latency_的特性
-    - 使用in_latch_ out_latch_ 描述模块之间的信号
+进行实现时，**必须**严格遵守以下规范：
 
+- 派生硬件模块继承 `BaseHW`。`BaseHW` 只作为配置/约束基类，保存 `input_count_`、`output_count_`、`input_interval_`、`function_latency_`、`clock_period_`，并提供 `cycles_to_time()`。
+- `input_interval_` 与 `function_latency_` 的单位均为时钟周期，不是 `sc_core::sc_time` 仿真时间。
+- 派生类需要继承并使用 `BaseHW` 的 `input_interval_`、`function_latency_` 等配置特性。
 
-# 派生类硬件模块的参考
-''
-template <typename T, typename Op = std::plus<T>>
-class BinaryScalarOp : public BaseHW, sc_module {
-public:
-    tlm_utils::simple_target_socket<BinaryScalarOp> in0;
-    tlm_utils::simple_target_socket<BinaryScalarOp> in1;
-    tlm_utils::simple_initiator_socket<BinaryScalarOp> out;
+## valid-ready握手协议
 
-    SC_HAS_PROCESS(BinaryScalarOp);
+- BaseHW派生类对上游和下游都采用valid-ready握手模式。
+- 模块之间使用Port `sc_in valid, sc_out ready` 建模valid-ready握手协议。
+  - 与上游的valid-ready握手信号Port：`sc_in fus_valid, sc_out tus_ready`
+  - 与下游的valid-ready握手信号Port：`sc_in fds_ready, sc_out tds_valid`
+- valid-ready Port中Channel类型使用 `sc_signal`。
+- input-output Port中Channel类型使用 `sc_fifo`。
+- 不再在 `BaseHW` 中声明 `hw_enque_()`、`hw_deque_()`、`hw_pipe_sim_()` 虚接口；派生类按自身结构注册 SystemC 进程。
 
-    BinaryScalarOp(
-        sc_module_name name,
-        sc_time function_interval,
-        sc_time function_latency,
-        std::size_t function_pipe_capacity,
-        sc_time transfer_latency,
-        Op op = Op{})
-        : sc_module(name),
-          in0("in0"),
-          in1("in1"),
-          out("out"),
-          function_interval_(function_interval),
-          function_latency_(function_latency),
-          transfer_latency_(transfer_latency),
-          function_pipe_capacity_(function_pipe_capacity),
-          op_(op),
-          trace_(std::string(this->name()) + ".txt")
-    {
-        if (function_pipe_capacity_ == 0) {
-            throw std::invalid_argument("function pipeline capacity must be greater than zero");
+## 统一流水线建模模式
+
+派生硬件模块应以 `include/fifo.hpp` 的当前实现为模范：
+
+- 每个模块使用一个时钟驱动的流水线主线程（通常命名为 `hw_pipe_sim_`）统一拥有并更新内部流水线状态。
+- 流水线主线程在时钟边沿后按确定顺序处理：
+  1. 若输出端 `tds_valid` 与所有下游 `fds_ready` 完成握手，向所有下游 `sc_fifo` 写出尾级数据、清空尾级并通知 `deque_`。
+  2. 从尾到头移动流水线中可前进的数据。
+  3. 若输入端 `fus_valid` 与 `tus_ready` 完成握手且首级可接收，读取输入 `sc_fifo`、执行组合功能、写入首级并通知 `enque_`。
+  4. 通知 `pipe_updated_`，使ready/valid展示线程更新信号。
+- `inport_ready_` / `outport_valid_` 等线程只负责握手信号展示，不直接修改流水线状态，不直接读写数据 FIFO。
+- `enque_`、`deque_`、`pipe_updated_` 等事件用于ready/valid展示线程与流水线主线程同步。
+
+## function_latency_
+
+- `function_latency_` 建模流水线延时。
+- 实现function功能的组合电路在流水线级之间切分，流水线容量/打拍寄存器个数等于 `function_latency_`。
+- 当所有输入端口完成握手后触发计算，经过 `function_latency_` 对应的流水线推进后，输出端口 `tds_valid` 拉高。
+
+## input_interval_(输入端口)
+
+- 每一个输入端口都具有独立握手冷却特性，`input_interval_[port]` 表示该输入端口完成一次握手后，到该端口再次允许拉高 `tus_ready` 之间需要等待的时钟周期数。
+- `input_interval_` 必须通过时钟边沿计数实现，不应使用 `sc_time` 延时替代。
+- `tus_ready` 除受 `input_interval_` 冷却影响外，还受流水线容量/首级可接收状态影响。当流水线因下游阻塞无法接收新输入时，输入端口必须保持 not-ready，直到流水线腾出空间。
+- 对多输入模块，只有满足该模块function语义所需的输入端口均可完成握手时，才应提交一次有效function计算。
+
+参考结构：
+```cpp
+SC_THREAD(hw_pipe_sim_);
+SC_THREAD(inport_ready_);
+SC_THREAD(outport_valid_);
+
+void hw_pipe_sim_() {
+    while (true) {
+        wait(clk.posedge_event());
+        wait(sc_core::SC_ZERO_TIME);
+
+        if (hw_pipe_.back() && tds_valid.read() && all_downstream_ready()) {
+            write_outputs(*hw_pipe_.back());
+            hw_pipe_.back().reset();
+            deque_.notify(sc_core::SC_ZERO_TIME);
         }
 
-        in0.register_b_transport(this, &BinaryScalarOp::input0_b_transport);
-        in1.register_b_transport(this, &BinaryScalarOp::input1_b_transport);
+        move_pipeline_tail_to_head();
 
-        log_state("CREATE BinaryScalarOp");
-        SC_THREAD(function_trigger_thread);
-        SC_THREAD(transfer_thread);
-    }
-
-private:
-
-    sc_time function_interval_;
-    sc_time function_latency_;
-    sc_time transfer_latency_;
-    std::size_t function_pipe_capacity_;
-    std::size_t function_pipe_inflight_ = 0;
-    Op op_;
-    std::ofstream trace_;
-
-    std::deque<T> in_latch_[2];
-    std::deque<T> out_latch_;
-    std::deque<T> function_pipe_;
-
-    sc_event out_latch_produced_ev_; // outport valid signal
-    sc_event out_latch_consumed_ev_; // marks when the out_latch_ has been sampled and function pipe can advance
-    sc_event in_latch_produced_ev_[2]; // inport valid signal
-    sc_event in_latch_consumed_ev_[2]; // inport ready signal
-
-    std::string function_pipe_trace() const
-    {
-        std::ostringstream oss;
-        oss << trace_deque(function_pipe_) << "/inflight=" << function_pipe_inflight_;
-        return oss.str();
-    }
-
-    void log_state(const std::string& event)
-    {
-        trace_log_prefix(trace_, event);
-        trace_ << " | " << std::left
-               << std::setw(24) << ("in_latch0=" + trace_deque(in_latch_[0]))
-               << std::setw(24) << ("in_latch1=" + trace_deque(in_latch_[1]))
-               << std::setw(36) << ("function_pipe=" + function_pipe_trace())
-               << "out_latch=" << trace_deque(out_latch_)
-               << std::right << std::endl;
-    }
-
-    void input0_b_transport(tlm_generic_payload& trans, sc_time& delay)
-    {
-        input_b_transport(0, trans, delay);
-    }
-
-    void input1_b_transport(tlm_generic_payload& trans, sc_time& delay)
-    {
-        input_b_transport(1, trans, delay);
-    }
-
-    void input_b_transport(int port_id, tlm_generic_payload& trans, sc_time& delay)
-    {
-        if (trans.get_command() != TLM_WRITE_COMMAND) {
-            trans.set_response_status(TLM_COMMAND_ERROR_RESPONSE);
-            return;
+        if (input_handshake_complete() && !hw_pipe_.front()) {
+            hw_pipe_.front() = hw_function_(read_inputs());
+            enque_.notify(sc_core::SC_ZERO_TIME);
         }
 
-        if (trans.get_data_length() != sizeof(T) || trans.get_data_ptr() == nullptr) {
-            trans.set_response_status(TLM_BURST_ERROR_RESPONSE);
-            return;
-        }
-
-        T value{};
-        std::memcpy(&value, trans.get_data_ptr(), sizeof(T));
-        {
-            std::ostringstream oss;
-            oss << "INPUT_REQUEST in" << port_id << " value=" << value << " delay=" << delay;
-            log_state(oss.str());
-        }
-
-        wait(delay);
-        delay = SC_ZERO_TIME;
-
-        while (!can_accept(port_id)) {
-            std::ostringstream oss;
-            oss << "INPUT_WAIT in" << port_id << " value=" << value;
-            log_state(oss.str());
-            wait(in_latch_consumed_ev_[port_id]);
-        }
-
-        in_latch_[port_id].push_back(value);
-        {
-            std::ostringstream oss;
-            oss << "INPUT_ACCEPTED in" << port_id << " value=" << value;
-            log_state(oss.str());
-        }
-        in_latch_produced_ev_[port_id].notify(SC_ZERO_TIME);
-        trans.set_response_status(TLM_OK_RESPONSE);
+        pipe_updated_.notify(sc_core::SC_ZERO_TIME);
     }
+}
+```
 
-    void function_trigger_thread()
-    {
-        while (true) {
-            wait(function_interval_);
+## 输出端口
 
-            while (!can_trigger_function()) {
-                wait(in_latch_produced_ev_[0] | in_latch_produced_ev_[1] | out_latch_consumed_ev_);
-            }
+- 不存在 `output_interval_`。
+- 对于输出端口，存在连接到多个下游输入端口的情况，这时输出端口的 `tds_valid` 需要和所有下游输入的 `fds_ready` 同时握手，即多个下游 `ready` 信号进行 and 运算。
+- 输出 `valid` 展示线程只根据尾级是否有效拉高 `tds_valid`，并在 `deque_` 事件后拉低，不直接写出数据 FIFO。
 
-            T a = in_latch_[0].front();
-            T b = in_latch_[1].front();
-            in_latch_[0].pop_front();
-            in_latch_[1].pop_front();
-            in_latch_consumed_ev_[0].notify(SC_ZERO_TIME);
-            in_latch_consumed_ev_[1].notify(SC_ZERO_TIME);
+参考结构：
+```cpp
+void outport_valid_() {
+    tds_valid.write(false);
+    wait(sc_core::SC_ZERO_TIME);
 
-            T result = op_(a, b);
-            function_pipe_.push_back(result);
-            ++function_pipe_inflight_;
-            {
-                std::ostringstream oss;
-                oss << "FUNCTION_START in0=" << a << " in1=" << b
-                    << " result=" << result
-                    << " latency=" << function_latency_;
-                log_state(oss.str());
-            }
-
-            sc_spawn(sc_bind(&BinaryScalarOp::function_pipe_thread, this));
+    while (true) {
+        if (hw_pipe_.back()) {
+            tds_valid.write(true);
+            wait(deque_);
+            tds_valid.write(false);
+        } else {
+            tds_valid.write(false);
+            wait(pipe_updated_);
         }
     }
+}
+```
 
-    void function_pipe_thread()
-    {
-        wait(function_latency_);
+## 延时单元
 
-        // Dequeue the result befor wait(out_latch_consumed_ev_) to keep order between different function_pipe_thread()
-        T result = function_pipe_.front();
-        function_pipe_.pop_front();
+- 延时单元是一类特殊的 `BaseHW` 派生类，行为与 FIFO 一致，一个输入端口，一个输出端口。
+- 输入端口的 `input_interval_` 为0，即ready信号是否拉高只与容量/首级可接收状态有关。
+- 输出端口的valid信号行为与其他 `BaseHW` 派生类一致。
 
-        while (!can_deque_function()) {
-            {
-                std::ostringstream oss;
-                oss << "FUNCTION_READY_BLOCKED result=" << function_pipe_.front();
-                log_state(oss.str());
-            }
-            wait(out_latch_consumed_ev_);
-        }
+# 示例系统的构建
 
-
-        --function_pipe_inflight_;
-        out_latch_.push_back(result);
-        {
-            std::ostringstream oss;
-            oss << "FUNCTION_FINISH result=" << result;
-            log_state(oss.str());
-        }
-        out_latch_produced_ev_.notify(SC_ZERO_TIME);
-    }
-
-    void transfer_thread()
-    {
-        while (true) {
-            wait(out_latch_produced_ev_);
-
-            T value = out_latch_.front();
-            unsigned char data[sizeof(T)];
-            std::memcpy(data, &value, sizeof(T));
-
-            tlm_generic_payload trans;
-            trans.set_command(TLM_WRITE_COMMAND);
-            trans.set_address(0);
-            trans.set_data_ptr(data);
-            trans.set_data_length(sizeof(T));
-            trans.set_streaming_width(sizeof(T));
-            trans.set_byte_enable_ptr(nullptr);
-            trans.set_dmi_allowed(false);
-            trans.set_response_status(TLM_INCOMPLETE_RESPONSE);
-
-            sc_time delay = transfer_latency_;
-            {
-                std::ostringstream oss;
-                oss << "TRANSFER_START value=" << value << " delay=" << delay;
-                log_state(oss.str());
-            }
-            out->b_transport(trans, delay);
-
-            if (trans.is_response_error()) {
-                SC_REPORT_ERROR(name(), trans.get_response_string().c_str());
-            }
-
-            out_latch_.pop_front();
-            {
-                std::ostringstream oss;
-                oss << "TRANSFER_END value=" << value;
-                log_state(oss.str());
-            }
-            {
-                std::ostringstream oss;
-                oss << "OUTPUT_CONSUMED value=" << value;
-                log_state(oss.str());
-            }
-            out_latch_consumed_ev_.notify(SC_ZERO_TIME);
-        }
-    }
-
-    bool can_enque_function() const
-    {
-        return !in_latch_[0].empty()
-            && !in_latch_[1].empty()
-            && function_pipe_inflight_ < function_pipe_capacity_;
-    }
-
-    bool can_deque_function() const{
-        return out_latch_.empty() && function_pipe_inflight_ > 0;
-    }
-
-    bool can_accept(int port_id) const
-    {
-        return in_latch_[port_id].empty();
-    }
-};
-''
+- 为了构建 `test/main.cpp` 中的测试系统，需要生成source和sink两个类，这两个类无需从 `BaseHW` 派生，独立开发。
+- source类需要具有产生数据 `interval_` 特性，并采用ready-valid握手机制。source应先持有待发送值并拉高valid，仅在时钟采样点确认所有下游ready后，才向所有下游 `sc_fifo` 写入该值。
+- sink类只需要具有消费数据 `interval_` 特性，并采用ready-valid握手机制。sink应由单一时钟线程拥有输入 FIFO 读取和消费状态更新，ready信号只展示容量/冷却状态。

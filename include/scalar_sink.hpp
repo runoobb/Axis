@@ -1,53 +1,152 @@
 #pragma once
 
-#ifndef SC_INCLUDE_DYNAMIC_PROCESSES
-#define SC_INCLUDE_DYNAMIC_PROCESSES
-#endif
+#include "module_logger.hpp"
 
-#include "base_hw.hpp"
-
-#include <deque>
-#include <memory>
-#include <tlm_utils/simple_target_socket.h>
+#include <cstddef>
+#include <optional>
+#include <stdexcept>
+#include <sstream>
+#include <systemc>
+#include <utility>
 #include <vector>
 
-class ScalarSink : public BaseHW {
+template <typename T = int>
+class ScalarSink : public sc_core::sc_module {
 public:
-    sc_core::sc_vector<tlm_utils::simple_target_socket_tagged<ScalarSink>> in;
+    sc_core::sc_in<bool> clk;
+    std::vector<sc_core::sc_fifo<T>*> in_data;
+    sc_core::sc_vector<sc_core::sc_in<bool>> fus_valid;
+    sc_core::sc_vector<sc_core::sc_out<bool>> tus_ready;
 
     SC_HAS_PROCESS(ScalarSink);
 
     ScalarSink(sc_core::sc_module_name name,
-               std::size_t input_count,
-               std::size_t queue_capacity,
-               std::size_t sink_interval,
+               std::size_t interval,
                sc_core::sc_time clock_period,
-               std::vector<std::vector<int>> expected = {});
-    ScalarSink(sc_core::sc_module_name name,
-               std::size_t queue_capacity,
-               std::size_t sink_interval,
-               sc_core::sc_time clock_period,
-               std::vector<int> expected = {});
+               std::vector<T> expected,
+               ModuleLogOptions log_options = {})
+        : ScalarSink(name,
+                     1,
+                     interval,
+                     clock_period,
+                     std::vector<std::vector<T>>{std::move(expected)},
+                     log_options) {}
 
-    bool can_enque() const override;
-    bool can_deque() const override;
-    bool can_accept(std::size_t port_id) const override;
-    void function_enque_thread() override;
-    void function_deque_thread() override;
-    void transfer_thread() override;
-    bool complete(std::size_t port_id = 0) const;
-    const std::vector<int>& sunk(std::size_t port_id = 0) const;
+    ScalarSink(sc_core::sc_module_name name,
+               std::size_t port_count,
+               std::size_t interval,
+               sc_core::sc_time,
+               std::vector<std::vector<T>> expected,
+               ModuleLogOptions log_options = {})
+        : sc_core::sc_module(name),
+          clk("clk"),
+          in_data(port_count, nullptr),
+          fus_valid("fus_valid", port_count),
+          tus_ready("tus_ready", port_count),
+          interval_(interval),
+          expected_(std::move(expected)),
+          observed_count_(port_count, 0),
+          hw_pipe_(port_count, std::vector<std::optional<T>>(pipe_depth())) {
+        if (expected_.size() != port_count) {
+            throw std::invalid_argument("expected sequence count must match port_count");
+        }
+        logger_.configure(this->name(), log_options);
+
+        SC_THREAD(hw_pipe_sim_);
+        SC_THREAD(inport_ready_);
+    }
+
+    bool complete() const {
+        for (std::size_t port = 0; port < expected_.size(); ++port) {
+            if (!complete(port)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool complete(std::size_t port) const {
+        return port < expected_.size() && observed_count_[port] == expected_[port].size();
+    }
 
 private:
-    std::size_t queue_capacity_;
-    std::vector<std::deque<int>> queues_;
-    std::vector<std::vector<int>> expected_;
-    std::vector<std::vector<int>> sunk_;
-    std::vector<std::unique_ptr<sc_core::sc_event>> produced_;
-    std::vector<std::unique_ptr<sc_core::sc_event>> consumed_;
+    std::size_t interval_;
+    std::vector<std::vector<T>> expected_;
+    std::vector<std::size_t> observed_count_;
+    std::vector<std::vector<std::optional<T>>> hw_pipe_;
+    ModuleLogger logger_;
+    std::size_t log_cycle_{0};
+    sc_core::sc_event enque_;
+    sc_core::sc_event deque_;
+    sc_core::sc_event pipe_updated_;
 
-    void input_b_transport(int port_id,
-                           tlm::tlm_generic_payload& trans,
-                           sc_core::sc_time& delay);
-    void consume_port(std::size_t port_id);
+    std::size_t pipe_depth() const {
+        return interval_ == 0 ? 1 : interval_;
+    }
+
+    void report_mismatch(std::size_t port, const T& actual, const T& expected) const {
+        std::ostringstream message;
+        message << "port " << port << " expected " << expected << " but received " << actual;
+        SC_REPORT_ERROR(name(), message.str().c_str());
+    }
+
+    void consume(std::size_t port, const T& observed) {
+        const auto& expected = expected_[port][observed_count_[port]];
+        if (observed != expected) {
+            report_mismatch(port, observed, expected);
+        }
+        ++observed_count_[port];
+    }
+
+    void hw_pipe_sim_() {
+        while (true) {
+            wait(clk.posedge_event());
+            wait(sc_core::SC_ZERO_TIME);
+
+            bool dequeued = false;
+            bool enqueued = false;
+
+            for (std::size_t port = 0; port < hw_pipe_.size(); ++port) {
+                auto& pipe = hw_pipe_[port];
+
+                if (pipe.back() && !complete(port)) {
+                    consume(port, *pipe.back());
+                    pipe.back().reset();
+                    dequeued = true;
+                    deque_.notify(sc_core::SC_ZERO_TIME);
+                }
+
+                for (std::size_t index = pipe.size() - 1; index > 0; --index) {
+                    if (!pipe[index] && pipe[index - 1]) {
+                        pipe[index] = std::move(pipe[index - 1]);
+                        pipe[index - 1].reset();
+                    }
+                }
+
+                if (!pipe.front() && fus_valid[port].read()
+                    && tus_ready[port].read() && !complete(port)) {
+                    pipe.front() = in_data[port]->read();
+                    enqueued = true;
+                    enque_.notify(sc_core::SC_ZERO_TIME);
+                }
+            }
+
+            logger_.log_pipeline(sc_core::sc_time_stamp(), ++log_cycle_, hw_pipe_, dequeued, enqueued);
+            pipe_updated_.notify(sc_core::SC_ZERO_TIME);
+        }
+    }
+
+    void inport_ready_() {
+        for (auto& ready : tus_ready) {
+            ready.write(false);
+        }
+        wait(sc_core::SC_ZERO_TIME);
+
+        while (true) {
+            for (std::size_t port = 0; port < tus_ready.size(); ++port) {
+                tus_ready[port].write(complete(port) || !hw_pipe_[port].front());
+            }
+            wait(pipe_updated_ | enque_ | deque_);
+        }
+    }
 };
