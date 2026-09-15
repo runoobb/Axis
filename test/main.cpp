@@ -22,13 +22,13 @@ int sc_main(int, char**) {
     const ModuleLogOptions slow_sink_log{true, "slow_sink.txt"};
     const ModuleLogOptions audit_sink_log{true, "audit_sink.txt"};
 
-    ScalarSource<int> op1_src("op1_src", {1, 2, 3, 4, 5}, 4, clock_period, 1, op1_src_log);
-    ScalarSource<int> op2_src("op2_src", {10, 20, 30, 40, 50}, 7, clock_period, 1, op2_src_log);
+    ScalarSource<int> op1_src("op1_src", {1, 2, 3, 4, 5}, 4, 1, clock_period, 1, op1_src_log);
+    ScalarSource<int> op2_src("op2_src", {10, 20, 30, 40, 50}, 7, 1, clock_period, 1, op2_src_log);
     FIFO<int> fifo("fifo", 2, clock_period, 1, fifo_log);
     ALU<int, std::plus<int>> alu("alu", {30, 30}, 2, clock_period, 4, std::plus<int>{}, alu_log);
-    ScalarSink<int> fast_sink("fast_sink", 10, clock_period, expected, fast_sink_log);
-    ScalarSink<int> slow_sink("slow_sink", 100, clock_period, expected, slow_sink_log);
-    ScalarSink<int> audit_sink("audit_sink", 2, 10, clock_period, {expected, expected}, audit_sink_log);
+    ScalarSink<int> fast_sink("fast_sink", 10, 1, clock_period, expected, fast_sink_log);
+    ScalarSink<int> slow_sink("slow_sink", 100, 1, clock_period, expected, slow_sink_log);
+    ScalarSink<int> audit_sink("audit_sink", 2, 10, 1, clock_period, {expected, expected}, audit_sink_log);
 
     op1_src.clk(clk);
     op2_src.clk(clk);
@@ -38,71 +38,71 @@ int sc_main(int, char**) {
     slow_sink.clk(clk);
     audit_sink.clk(clk);
 
-    sc_core::sc_fifo<int> op1_data;
+    sc_core::sc_signal<int> op1_data;
     sc_core::sc_signal<bool> op1_valid;
     sc_core::sc_signal<bool> op1_ready;
 
-    sc_core::sc_fifo<int> op2_data;
+    sc_core::sc_signal<int> op2_data;
     sc_core::sc_signal<bool> op2_valid;
     sc_core::sc_signal<bool> op2_ready;
 
-    sc_core::sc_fifo<int> fifo_data;
+    sc_core::sc_signal<int> fifo_data;
     sc_core::sc_signal<bool> fifo_valid;
     sc_core::sc_signal<bool> fifo_ready;
 
-    sc_core::sc_fifo<int> alu_out0_data;
-    sc_core::sc_fifo<int> alu_out1_data;
-    sc_core::sc_fifo<int> alu_out2_data;
-    sc_core::sc_fifo<int> alu_out3_data;
+    sc_core::sc_signal<int> alu_out0_data;
+    sc_core::sc_signal<int> alu_out1_data;
+    sc_core::sc_signal<int> alu_out2_data;
+    sc_core::sc_signal<int> alu_out3_data;
     sc_core::sc_signal<bool> alu_valid;
     sc_core::sc_signal<bool> fast_ready;
     sc_core::sc_signal<bool> slow_ready;
     sc_core::sc_signal<bool> audit0_ready;
     sc_core::sc_signal<bool> audit1_ready;
 
-    op1_src.out_data[0] = &op1_data;
-    op1_src.tds_valid[0](op1_valid);
+    op1_src.out_data[0](op1_data);
+    op1_src.tds_valid(op1_valid);
     op1_src.fds_ready[0](op1_ready);
-    alu.in_data[0] = &op1_data;
+    alu.in_data[0](op1_data);
     alu.fus_valid[0](op1_valid);
     alu.tus_ready[0](op1_ready);
 
-    op2_src.out_data[0] = &op2_data;
-    op2_src.tds_valid[0](op2_valid);
+    op2_src.out_data[0](op2_data);
+    op2_src.tds_valid(op2_valid);
     op2_src.fds_ready[0](op2_ready);
-    fifo.in_data = &op2_data;
+    fifo.in_data(op2_data);
     fifo.fus_valid(op2_valid);
     fifo.tus_ready(op2_ready);
 
-    fifo.out_data[0] = &fifo_data;
+    fifo.out_data[0](fifo_data);
     fifo.tds_valid(fifo_valid);
     fifo.fds_ready[0](fifo_ready);
-    alu.in_data[1] = &fifo_data;
+    alu.in_data[1](fifo_data);
     alu.fus_valid[1](fifo_valid);
     alu.tus_ready[1](fifo_ready);
 
-    alu.out_data[0] = &alu_out0_data;
-    alu.out_data[1] = &alu_out1_data;
-    alu.out_data[2] = &alu_out2_data;
-    alu.out_data[3] = &alu_out3_data;
+    alu.out_data[0](alu_out0_data);
+    alu.out_data[1](alu_out1_data);
+    alu.out_data[2](alu_out2_data);
+    alu.out_data[3](alu_out3_data);
     alu.tds_valid(alu_valid);
     alu.fds_ready[0](fast_ready);
     alu.fds_ready[1](slow_ready);
     alu.fds_ready[2](audit0_ready);
     alu.fds_ready[3](audit1_ready);
 
-    fast_sink.in_data[0] = &alu_out0_data;
+    fast_sink.in_data[0](alu_out0_data);
     fast_sink.fus_valid[0](alu_valid);
     fast_sink.tus_ready[0](fast_ready);
 
-    slow_sink.in_data[0] = &alu_out1_data;
+    slow_sink.in_data[0](alu_out1_data);
     slow_sink.fus_valid[0](alu_valid);
     slow_sink.tus_ready[0](slow_ready);
 
-    audit_sink.in_data[0] = &alu_out2_data;
+    audit_sink.in_data[0](alu_out2_data);
     audit_sink.fus_valid[0](alu_valid);
     audit_sink.tus_ready[0](audit0_ready);
-    audit_sink.in_data[1] = &alu_out3_data;
+    audit_sink.in_data[1](alu_out3_data);
     audit_sink.fus_valid[1](alu_valid);
     audit_sink.tus_ready[1](audit1_ready);
 

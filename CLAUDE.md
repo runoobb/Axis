@@ -30,25 +30,28 @@
 ## valid-ready握手协议
 
 - BaseHW派生类对上游和下游都采用valid-ready握手模式。
-- 模块之间使用Port `sc_in valid, sc_out ready` 建模valid-ready握手协议。
-  - 与上游的valid-ready握手信号Port：`sc_in fus_valid, sc_out tus_ready`
-  - 与下游的valid-ready握手信号Port：`sc_in fds_ready, sc_out tds_valid`
+- 模块之间使用Port `valid` / `ready` 建模valid-ready握手协议。
+  - 与上游的valid-ready握手信号Port：输入有效使用 `fus_valid`，输出反压使用 `tus_ready`。
+  - 与下游的valid-ready握手信号Port：输入反压使用 `fds_ready`，输出有效使用 `tds_valid`。
+- 一个模块可以有一个或多个输入端口，因此 `fus_valid` / `tus_ready` 可以是单端口或按输入端口组织的 `sc_vector`。
+- 一个模块对下游只展示一个 output valid，即 `tds_valid` 为模块级单一 `sc_out<bool>`，不是按下游输出端口复制的 valid vector。
+- 当一个模块连接到多个下游模块时，各个下游模块的 `fus_valid` 共同绑定到上游模块同一个 `tds_valid` 所连接的 `sc_signal<bool>`；SystemC `sc_signal` 支持一个上游 `sc_out` 写端和多个下游 `sc_in` 读端。
+- 下游 `ready` 仍按连接的下游输入端口分别建模，上游通过 `fds_ready` 收集每个下游的 ready，并在需要广播提交时对所有 `fds_ready` 做 and 判断。
 - valid-ready Port中Channel类型使用 `sc_signal`。
-- input-output Port中Channel类型使用 `sc_fifo`。
+- 当前实现的数据Port也使用 `sc_signal` 建模，广播输出时上游对每个下游数据连接分别提供一个 `out_data` 端口。
 - 不再在 `BaseHW` 中声明 `hw_enque_()`、`hw_deque_()`、`hw_pipe_sim_()` 虚接口；派生类按自身结构注册 SystemC 进程。
 
 ## 统一流水线建模模式
 
 派生硬件模块应以 `include/fifo.hpp` 的当前实现为模范：
 
-- 每个模块使用一个时钟驱动的流水线主线程（通常命名为 `hw_pipe_sim_`）统一拥有并更新内部流水线状态。
-- 流水线主线程在时钟边沿后按确定顺序处理：
-  1. 若输出端 `tds_valid` 与所有下游 `fds_ready` 完成握手，向所有下游 `sc_fifo` 写出尾级数据、清空尾级并通知 `deque_`。
+- 每个模块使用一个时钟驱动的流水线主进程（通常命名为 `hw_pipe_sim_`）统一拥有并更新内部流水线状态。
+- 当前实现中，`hw_pipe_sim_` 同时负责流水线状态推进、数据端口写出以及 ready/valid 信号更新，不再拆分额外的 ready/valid 展示线程。
+- 流水线主进程在时钟边沿后按确定顺序处理：
+  1. 若输出端 `tds_valid` 与所有下游 `fds_ready` 完成握手，向所有下游数据端口写出尾级数据并清空尾级。
   2. 从尾到头移动流水线中可前进的数据。
-  3. 若输入端 `fus_valid` 与 `tus_ready` 完成握手且首级可接收，读取输入 `sc_fifo`、执行组合功能、写入首级并通知 `enque_`。
-  4. 通知 `pipe_updated_`，使ready/valid展示线程更新信号。
-- `inport_ready_` / `outport_valid_` 等线程只负责握手信号展示，不直接修改流水线状态，不直接读写数据 FIFO。
-- `enque_`、`deque_`、`pipe_updated_` 等事件用于ready/valid展示线程与流水线主线程同步。
+  3. 若输入端 `fus_valid` 与 `tus_ready` 完成握手且首级可接收，读取输入数据端口、执行组合功能、写入首级。
+  4. 根据尾级是否有效更新单一 `tds_valid`，并根据首级可接收状态与输入冷却状态更新 `tus_ready`。
 
 ## function_latency_
 
@@ -65,56 +68,20 @@
 
 参考结构：
 ```cpp
-SC_THREAD(hw_pipe_sim_);
-SC_THREAD(inport_ready_);
-SC_THREAD(outport_valid_);
 
-void hw_pipe_sim_() {
-    while (true) {
-        wait(clk.posedge_event());
-        wait(sc_core::SC_ZERO_TIME);
-
-        if (hw_pipe_.back() && tds_valid.read() && all_downstream_ready()) {
-            write_outputs(*hw_pipe_.back());
-            hw_pipe_.back().reset();
-            deque_.notify(sc_core::SC_ZERO_TIME);
-        }
-
-        move_pipeline_tail_to_head();
-
-        if (input_handshake_complete() && !hw_pipe_.front()) {
-            hw_pipe_.front() = hw_function_(read_inputs());
-            enque_.notify(sc_core::SC_ZERO_TIME);
-        }
-
-        pipe_updated_.notify(sc_core::SC_ZERO_TIME);
-    }
-}
 ```
 
 ## 输出端口
 
 - 不存在 `output_interval_`。
-- 对于输出端口，存在连接到多个下游输入端口的情况，这时输出端口的 `tds_valid` 需要和所有下游输入的 `fds_ready` 同时握手，即多个下游 `ready` 信号进行 and 运算。
-- 输出 `valid` 展示线程只根据尾级是否有效拉高 `tds_valid`，并在 `deque_` 事件后拉低，不直接写出数据 FIFO。
+- 一个模块对下游只有一个 `tds_valid`，即使连接到多个下游模块，也应让多个下游输入端口绑定到同一个上游 `tds_valid` 信号，而不是为每个下游复制独立 valid。
+- 对于连接到多个下游输入端口的情况，输出提交需要 `tds_valid` 与所有下游输入的 `fds_ready` 同时握手，即多个下游 `ready` 信号进行 and 运算。
+- 广播输出时，数据端口可以按下游连接分别提供多个 `out_data`，但这些数据端口共享同一个 `tds_valid` 握手有效信号。
+- 当前实现中，输出 valid 由流水线主进程根据尾级是否有效直接更新。
 
 参考结构：
 ```cpp
-void outport_valid_() {
-    tds_valid.write(false);
-    wait(sc_core::SC_ZERO_TIME);
 
-    while (true) {
-        if (hw_pipe_.back()) {
-            tds_valid.write(true);
-            wait(deque_);
-            tds_valid.write(false);
-        } else {
-            tds_valid.write(false);
-            wait(pipe_updated_);
-        }
-    }
-}
 ```
 
 ## 延时单元
@@ -126,5 +93,5 @@ void outport_valid_() {
 # 示例系统的构建
 
 - 为了构建 `test/main.cpp` 中的测试系统，需要生成source和sink两个类，这两个类无需从 `BaseHW` 派生，独立开发。
-- source类需要具有产生数据 `interval_` 特性，并采用ready-valid握手机制。source应先持有待发送值并拉高valid，仅在时钟采样点确认所有下游ready后，才向所有下游 `sc_fifo` 写入该值。
+- source类需要具有产生数据 `interval_` 特性，并采用ready-valid握手机制。source应使用模块级单一 `tds_valid`，先持有待发送值并拉高valid，仅在时钟采样点确认所有下游ready后，才向所有下游数据端口写入该值。
 - sink类只需要具有消费数据 `interval_` 特性，并采用ready-valid握手机制。sink应由单一时钟线程拥有输入 FIFO 读取和消费状态更新，ready信号只展示容量/冷却状态。
