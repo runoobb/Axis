@@ -42,7 +42,8 @@ public:
           tds_valid("tds_valid"),
           op_(std::move(op)),
           hw_pipe_(function_latency_),
-          input_cooldown_remaining_(input_count_, 0) {
+          input_cooldown_remaining_(input_count_, 0),
+          pending_inputs_(input_count_) {
         assert(function_latency_ > 0);
         if (output_count_ == 0) {
             throw std::invalid_argument("ALU requires at least one output");
@@ -54,9 +55,9 @@ public:
         dont_initialize();
     }
 
-    void before_end_of_elaboration() override {
+    void end_of_elaboration() override {
         for (auto& ready : tus_ready) {
-            ready.write(false);
+            ready.write(true);
         }
         tds_valid.write(false);
     }
@@ -66,54 +67,58 @@ private:
     std::vector<std::optional<T>> hw_pipe_;
     ModuleLogger logger_;
     std::vector<std::size_t> input_cooldown_remaining_;
+    std::vector<std::optional<T>> pending_inputs_;
 
     void hw_pipe_sim_() {
-        const bool do_deque = tds_valid.read() && hw_pipe_.back() && all_downstream_ready();
-        const bool do_enque = !hw_pipe_.front() && all_inputs_handshaking();
+        const bool do_deque = tds_valid.read() && all_downstream_ready();
 
         if (do_deque) {
-            for (auto& data : out_data) {
-                data.write(*hw_pipe_.back());
-            }
             hw_pipe_.back().reset();
         }
 
-        for (std::size_t index = function_latency_ - 1; index > 0; --index) {
-            if (do_deque && index == function_latency_ - 1) {
-                continue;
-            }
-            if (!hw_pipe_[index] && hw_pipe_[index - 1]) {
-                hw_pipe_[index] = std::move(hw_pipe_[index - 1]);
-                hw_pipe_[index - 1].reset();
-            }
-        }
+        if(function_latency_ > 1) {
+            for (std::size_t i = function_latency_ - 1; i > 0; --i) {
+                if (!hw_pipe_[i].has_value() &&
+                    hw_pipe_[i - 1].has_value()) {
 
-        if (do_enque) {
-            const T left = in_data[0].read();
-            const T right = in_data[1].read();
-            hw_pipe_.front() = static_cast<T>(op_(left, right));
-            for (std::size_t port = 0; port < input_cooldown_remaining_.size(); ++port) {
-                input_cooldown_remaining_[port] = input_interval_[port];
-            }
-        } else {
-            for (auto& cooldown : input_cooldown_remaining_) {
-                if (cooldown > 0) {
-                    --cooldown;
+                    hw_pipe_[i] =
+                        std::move(hw_pipe_[i - 1]);
+
+                    hw_pipe_[i - 1].reset();
                 }
             }
         }
 
-        tds_valid.write(hw_pipe_.back().has_value());
-        if (hw_pipe_.back()) {
+        const bool front_can_accept = !hw_pipe_.front().has_value();
+        for (std::size_t port = 0; port < input_count_; ++port) {
+            if (tus_ready[port].read() && fus_valid[port].read() && front_can_accept
+                && !pending_inputs_[port].has_value()) {
+                pending_inputs_[port] = in_data[port].read();
+                input_cooldown_remaining_[port] = input_interval_[port];
+            } else if (input_cooldown_remaining_[port] > 0) {
+                --input_cooldown_remaining_[port];
+            }
+        }
+
+        const bool do_enque = front_can_accept && pending_inputs_[0].has_value()
+                              && pending_inputs_[1].has_value();
+        if (do_enque) {
+            hw_pipe_.front() = static_cast<T>(op_(*pending_inputs_[0], *pending_inputs_[1]));
+            for (auto& input : pending_inputs_) {
+                input.reset();
+            }
+        }
+
+        if (hw_pipe_.back().has_value()) {
             for (auto& data : out_data) {
                 data.write(*hw_pipe_.back());
             }
         }
-        const bool inputs_can_commit = !hw_pipe_.front().has_value()
-                                       && all_inputs_valid()
-                                       && all_input_cooldowns_clear();
-        for (std::size_t port = 0; port < tus_ready.size(); ++port) {
-            tus_ready[port].write(inputs_can_commit);
+        tds_valid.write(hw_pipe_.back().has_value() && all_downstream_ready());
+
+        for (std::size_t port = 0; port < input_count_; ++port) {
+            tus_ready[port].write(front_can_accept && !pending_inputs_[port].has_value()
+                                  && input_cooldown_remaining_[port] == 0);
         }
 
         logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
@@ -124,29 +129,4 @@ private:
             return ready.read();
         });
     }
-
-    bool all_inputs_valid() const {
-        return std::all_of(fus_valid.begin(), fus_valid.end(), [](const auto& valid) {
-            return valid.read();
-        });
-    }
-
-    bool all_inputs_ready() const {
-        return std::all_of(tus_ready.begin(), tus_ready.end(), [](const auto& ready) {
-            return ready.read();
-        });
-    }
-
-    bool all_inputs_handshaking() const {
-        return all_inputs_valid() && all_inputs_ready();
-    }
-
-    bool all_input_cooldowns_clear() const {
-        return std::all_of(input_cooldown_remaining_.begin(),
-                           input_cooldown_remaining_.end(),
-                           [](std::size_t cooldown) {
-                               return cooldown == 0;
-                           });
-    }
-
 };

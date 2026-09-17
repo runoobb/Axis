@@ -17,5 +17,17 @@ target_include_directories(axis_hw PUBLIC
 target_link_directories(axis_hw PUBLIC ${SYSTEMC_HOME}/lib)
 target_link_libraries(axis_hw PUBLIC systemc pthread)
 
-add_executable(axis_test test/main.cpp)
-target_link_libraries(axis_test PRIVATE axis_hw)
+set(AXIS_TEST_CASES
+    01_source_to_sink
+    02_source_broadcast_to_sink
+    03_alu_two_input
+)
+
+foreach(test_case IN LISTS AXIS_TEST_CASES)
+    set(test_target axis_test_${test_case})
+    add_executable(${test_target} test/${test_case}/main.cpp)
+    target_link_libraries(${test_target} PRIVATE axis_hw)
+    target_compile_definitions(${test_target}
+        PRIVATE AXIS_TEST_TRACE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/${test_case}"
+    )
+endforeach()

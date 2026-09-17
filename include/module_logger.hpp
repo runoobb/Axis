@@ -67,37 +67,16 @@ public:
         file_.flush();
     }
 
-    template <typename T>
-    void log_sink_consumed(std::size_t port,
-                           std::size_t index,
-                           const T& value,
-                           const T& expected,
-                           bool match) {
-        if (!enabled_) {
-            return;
-        }
+    // template <typename T>
+    // void log_sink_consumed(std::size_t index, const T& value) {
+    //     if (!enabled_) {
+    //         return;
+    //     }
 
-        file_ << "sink port=" << port
-              << " index=" << index
-              << " value=" << value
-              << " expected=" << expected
-              << " match=" << (match ? 1 : 0) << '\n';
-        file_.flush();
-    }
-
-    template <typename T>
-    void log_sink_unexpected(std::size_t port, std::size_t index, const T& value) {
-        if (!enabled_) {
-            return;
-        }
-
-        file_ << "sink port=" << port
-              << " index=" << index
-              << " value=" << value
-              << " expected=<none>"
-              << " match=0\n";
-        file_.flush();
-    }
+    //     file_ << "sink index=" << index
+    //           << " value=" << value << '\n';
+    //     file_.flush();
+    // }
 
 private:
     bool enabled_{false};

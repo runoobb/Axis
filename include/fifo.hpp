@@ -49,31 +49,40 @@ public:
         dont_initialize();
     }
 
-    void before_end_of_elaboration() override {
-        tus_ready.write(false);
+    void end_of_elaboration() override {
+        tus_ready.write(true);
         tds_valid.write(false);
     }
 
     void hw_pipe_sim_() {
-        const bool do_deque = tds_valid.read() && hw_pipe_.back() && all_downstream_ready();
-        const bool do_enque = tus_ready.read() && fus_valid.read() && !hw_pipe_.front();
+        const bool do_deque = tds_valid.read() && all_downstream_ready();
 
         if (do_deque) {
-            for (auto& data : out_data) {
-                data.write(*hw_pipe_.back());
-            }
             hw_pipe_.back().reset();
         }
 
-        for (std::size_t index = function_latency_ - 1; index > 0; --index) {
-            if (do_deque && index == function_latency_ - 1) {
-                continue;
-            }
-            if (!hw_pipe_[index] && hw_pipe_[index - 1]) {
-                hw_pipe_[index] = std::move(hw_pipe_[index - 1]);
-                hw_pipe_[index - 1].reset();
+        // ------------------------------------------------------------
+        // Move pipeline stages.
+        //
+        // IMPORTANT:
+        // Iterate from back to front so that every item moves
+        // at most ONE stage in one clock cycle.
+        // ------------------------------------------------------------
+        if(function_latency_ > 1) {
+            for (std::size_t i = function_latency_ - 1; i > 0; --i) {
+                if (!hw_pipe_[i].has_value() &&
+                    hw_pipe_[i - 1].has_value()) {
+
+                    hw_pipe_[i] =
+                        std::move(hw_pipe_[i - 1]);
+
+                    hw_pipe_[i - 1].reset();
+                }
             }
         }
+
+        const bool front_can_accept = !hw_pipe_.front().has_value();
+        const bool do_enque = tus_ready.read() && fus_valid.read() && front_can_accept;
 
         if (do_enque) {
             hw_pipe_.front() = in_data.read();
@@ -81,14 +90,14 @@ public:
         } else if (input_cooldown_remaining_ > 0) {
             --input_cooldown_remaining_;
         }
-        
-        tds_valid.write(hw_pipe_.back().has_value());
-        if (hw_pipe_.back()) {
+
+        if (hw_pipe_.back().has_value()) {
             for (auto& data : out_data) {
                 data.write(*hw_pipe_.back());
             }
         }
-        tus_ready.write(!hw_pipe_.front().has_value() && input_cooldown_remaining_ == 0);
+        tds_valid.write(hw_pipe_.back().has_value() && all_downstream_ready());
+        tus_ready.write(front_can_accept && input_cooldown_remaining_ == 0);
 
         logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
     }

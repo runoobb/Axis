@@ -23,7 +23,7 @@ public:
 
     ScalarSource(sc_core::sc_module_name name,
                  std::vector<T> values,
-                 std::size_t interval,
+                 std::size_t output_interval,
                  std::size_t function_latency,
                  sc_core::sc_time clock_period,
                  std::size_t output_count,
@@ -34,10 +34,10 @@ public:
           tds_valid("tds_valid"),
           fds_ready("fds_ready", output_count),
           values_(std::move(values)),
-          interval_(interval),
+          output_interval_(output_interval),
           function_latency_(function_latency),
           hw_pipe_(function_latency_),
-          interval_remaining_(interval_) {
+          output_interval_remaining_(output_interval_) {
         assert(function_latency_ > 0);
         if (output_count == 0) {
             throw std::invalid_argument("ScalarSource requires at least one output");
@@ -49,59 +49,68 @@ public:
         dont_initialize();
     }
 
-    void before_end_of_elaboration() override {
+    void end_of_elaboration() override {
         tds_valid.write(false);
     }
 
 private:
     std::vector<T> values_;
     std::size_t next_value_{0};
-    std::size_t interval_;
+    std::size_t output_interval_;
     std::size_t function_latency_;
     std::vector<std::optional<T>> hw_pipe_;
     ModuleLogger logger_;
-    std::size_t interval_remaining_{0};
+    std::size_t output_interval_remaining_{0};
 
     void hw_pipe_sim_() {
-        const bool do_deque = tds_valid.read() && hw_pipe_.back() && all_downstream_ready();
-        const bool do_enque = !hw_pipe_.front() && next_value_ < values_.size()
-                              && interval_remaining_ == 0;
+        const bool do_deque = tds_valid.read() && all_downstream_ready();
+        // const bool do_enque = !hw_pipe_.back().has_value() && all_downstream_ready();
 
         if (do_deque) {
-            write_outputs(*hw_pipe_.back());
             hw_pipe_.back().reset();
         }
 
-        for (std::size_t index = function_latency_ - 1; index > 0; --index) {
-            if (do_deque && index == function_latency_ - 1) {
-                continue;
-            }
-            if (!hw_pipe_[index] && hw_pipe_[index - 1]) {
-                hw_pipe_[index] = std::move(hw_pipe_[index - 1]);
-                hw_pipe_[index - 1].reset();
+        // ------------------------------------------------------------
+        // Move pipeline stages.
+        //
+        // IMPORTANT:
+        // Iterate from back to front so that every item moves
+        // at most ONE stage in one clock cycle.
+        // ------------------------------------------------------------
+        if(function_latency_ > 1) {
+            for (std::size_t i = function_latency_ - 1; i > 0; --i) {
+                if (!hw_pipe_[i].has_value() &&
+                    hw_pipe_[i - 1].has_value()) {
+
+                    hw_pipe_[i] =
+                        std::move(hw_pipe_[i - 1]);
+
+                    hw_pipe_[i - 1].reset();
+                }
             }
         }
+
+        // do_enque should be calculated here after the state of hw_pipe_ has been updated for this cycle
+        const bool do_enque = !hw_pipe_.front().has_value() && next_value_ < values_.size()
+                              && output_interval_remaining_ == 0;   
 
         if (do_enque) {
             hw_pipe_.front() = values_[next_value_++];
-            interval_remaining_ = interval_;
-        } else if (interval_remaining_ > 0) {
-            --interval_remaining_;
+            output_interval_remaining_ = output_interval_;
+        } else if (output_interval_remaining_ > 0) {
+            --output_interval_remaining_;
         }
 
-        tds_valid.write(hw_pipe_.back().has_value());
-        if (hw_pipe_.back()) {
-            write_outputs(*hw_pipe_.back());
+        if (hw_pipe_.back().has_value()) {
+            for (auto& data : out_data) {
+                data.write(*hw_pipe_.back());
+            }
         }
-
+        
+        tds_valid.write(hw_pipe_.back().has_value() && all_downstream_ready());
         logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
     }
 
-    void write_outputs(const T& value) {
-        for (auto& data : out_data) {
-            data.write(value);
-        }
-    }
 
     bool all_downstream_ready() const {
         return std::all_of(fds_ready.begin(), fds_ready.end(), [](const auto& ready) {
