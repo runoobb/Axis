@@ -28,11 +28,11 @@ int sc_main(int, char**) {
     const ModuleLogOptions fast_sink_log{true, axis_test::trace_path("fast_sink.txt")};
     const ModuleLogOptions slow_sink_log{true, axis_test::trace_path("slow_sink.txt")};
 
-    ScalarSource<int> high_source("high_source", high_priority_values, 0, 1, clock_period, 1,
+    ScalarSource<int> high_source("high_source", high_priority_values, 1, clock_period, 1,
                                   high_source_log);
-    ScalarSource<int> mid_source("mid_source", mid_priority_values, 0, 1, clock_period, 1,
+    ScalarSource<int> mid_source("mid_source", mid_priority_values, 1, clock_period, 1,
                                  mid_source_log);
-    ScalarSource<int> low_source("low_source", low_priority_values, 0, 1, clock_period, 1,
+    ScalarSource<int> low_source("low_source", low_priority_values, 1, clock_period, 1,
                                  low_source_log);
     Arbiter<int> arbiter("arbiter", 3, 2, {0, 0, 0}, 1, clock_period, arbiter_log);
     ScalarSink<int> fast_sink("fast_sink", 0, 1, clock_period, fast_sink_log);

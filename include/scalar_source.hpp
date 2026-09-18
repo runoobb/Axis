@@ -38,7 +38,6 @@ public:
 
     ScalarSource(sc_core::sc_module_name name,
                  std::vector<T> values,
-                 std::size_t output_interval,
                  std::size_t function_latency,
                  sc_core::sc_time clock_period,
                  std::size_t output_count,
@@ -85,24 +84,13 @@ private:
     ModuleLogger logger_;
 
     void hw_pipe_sim_() {
-        // ------------------------------------------------------------
-        // Last stage: downstream valid-ready handshake.
-        //
-        // The single output port may feed several downstream input ports, so
-        // the handshake only completes once every one of them is ready.
-        // ------------------------------------------------------------
+
         const bool do_deque = transfer_tds.read();
         
         if (do_deque) 
             hw_pipe_.back().reset();
 
-        // ------------------------------------------------------------
-        // Intermediate stages: advance the pipeline.
-        //
-        // IMPORTANT:
-        // Iterate from the last stage towards the first one so that every
-        // item moves at most ONE stage in one clock cycle.
-        // ------------------------------------------------------------
+
         for (std::size_t i = function_latency_ - 1; i > 0; --i) {
             if (!hw_pipe_[i].has_value() && hw_pipe_[i - 1].has_value()) {
                 hw_pipe_[i] = std::move(hw_pipe_[i - 1]);
@@ -110,13 +98,6 @@ private:
             }
         }
 
-        // ------------------------------------------------------------
-        // First stage: inject the next value.
-        //
-        // Evaluated after the shift above so that it observes the pipeline
-        // state of this cycle. The source has no upstream port, so the only
-        // pacing is the output_interval_ cooldown.
-        // ------------------------------------------------------------
         const bool do_enque = !hw_pipe_.front().has_value();
 
         if(do_enque && next_value_ < values_.size()){

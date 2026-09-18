@@ -32,11 +32,11 @@ int sc_main(int, char**) {
     const ModuleLogOptions sram_write_log{true, axis_test::trace_path("sram_write.txt")};
     const ModuleLogOptions sink_log{true, axis_test::trace_path("sink.txt")};
 
-    ScalarSource<std::size_t> write_addr_source("write_addr_source", write_addresses, 1, 1,
+    ScalarSource<std::size_t> write_addr_source("write_addr_source", write_addresses, 1,
                                                 clock_period, 1, write_addr_source_log);
-    ScalarSource<int> write_data_source("write_data_source", write_values, 3, 1, clock_period, 1,
+    ScalarSource<int> write_data_source("write_data_source", write_values, 1, clock_period, 1,
                                         write_data_source_log);
-    ScalarSource<std::size_t> read_addr_source("read_addr_source", read_addresses, 12, 1,
+    ScalarSource<std::size_t> read_addr_source("read_addr_source", read_addresses, 1,
                                                clock_period, 1, read_addr_source_log);
     SRAM<std::size_t, int> sram("sram", 8, {0, 0, 0}, 1, clock_period, 1, 0, sram_read_log,
                                 sram_write_log);

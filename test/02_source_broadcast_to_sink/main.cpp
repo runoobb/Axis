@@ -16,7 +16,7 @@ int sc_main(int, char**) {
     const ModuleLogOptions slow_sink_log{true, axis_test::trace_path("slow_sink.txt")};
     const ModuleLogOptions fast_sink_log{true, axis_test::trace_path("fast_sink.txt")};
 
-    ScalarSource<int> source("source", values, 5, 1, clock_period, 2, source_log);
+    ScalarSource<int> source("source", values, 1, clock_period, 2, source_log);
     ScalarSink<int> slow_sink("slow_sink", 4, 1, clock_period, slow_sink_log);
     ScalarSink<int> fast_sink("fast_sink", 2, 1, clock_period, fast_sink_log);
 

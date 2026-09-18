@@ -25,7 +25,7 @@ int sc_main(int, char**) {
     const ModuleLogOptions fifo1_log{true, axis_test::trace_path("fifo1.txt")};
     const ModuleLogOptions sink_log{true, axis_test::trace_path("sink.txt")};
 
-    ScalarSource<int> source("source", values, 0, function_latency, clock_period, 1, source_log);
+    ScalarSource<int> source("source", values, function_latency, clock_period, 1, source_log);
     FIFO<int> fifo0("fifo0", 2, function_latency, clock_period, 1, fifo0_log);
     FIFO<int> fifo1("fifo1", 0, function_latency, clock_period, 1, fifo1_log);
     ScalarSink<int> sink("sink", 0, function_latency, clock_period, sink_log);

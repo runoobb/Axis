@@ -15,7 +15,7 @@ int sc_main(int, char**) {
     const ModuleLogOptions source_log{true, axis_test::trace_path("source.txt")};
     const ModuleLogOptions sink_log{true, axis_test::trace_path("sink.txt")};
 
-    ScalarSource<int> source("source", values, 0, 2, clock_period, 1, source_log);
+    ScalarSource<int> source("source", values, 2, clock_period, 1, source_log);
     ScalarSink<int> sink("sink", 0, 1, clock_period, sink_log);
 
     source.clk(clk);

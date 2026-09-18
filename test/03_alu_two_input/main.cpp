@@ -25,8 +25,8 @@ int sc_main(int, char**) {
     const ModuleLogOptions sink_log{true, axis_test::trace_path("sink.txt")};
     const ModuleLogOptions second_sink_log{true, axis_test::trace_path("second_sink.txt")};
 
-    ScalarSource<int> left_source("left_source", left_values, 0, 1, clock_period, 1, left_log);
-    ScalarSource<int> right_source("right_source", right_values, 0, 1, clock_period, 1, right_log);
+    ScalarSource<int> left_source("left_source", left_values, 1, clock_period, 1, left_log);
+    ScalarSource<int> right_source("right_source", right_values, 1, clock_period, 1, right_log);
     ALU<int, std::plus<int>> alu("alu", {0, 0}, 3, clock_period, 2, std::plus<int>{}, alu_log);
     ScalarSink<int> sink("sink", 0, 1, clock_period, sink_log);
     ScalarSink<int> second_sink("second_sink", 0, 1, clock_period, second_sink_log);

@@ -5,6 +5,7 @@ project(axis_systemc_test LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(SYSTEMC_HOME /opt/systemc CACHE PATH "SystemC installation prefix")
 
@@ -18,13 +19,10 @@ target_link_directories(axis_hw PUBLIC ${SYSTEMC_HOME}/lib)
 target_link_libraries(axis_hw PUBLIC systemc pthread)
 
 set(AXIS_TEST_CASES
-    # 01_source_to_sink
-    # 02_source_broadcast_to_sink
-    # 03_alu_two_input
+    01_source_to_sink
+    02_source_broadcast_to_sink
     03_alu_two_input
-    # 04_arbiter
     04_arbiter
-    # 05_sram
     05_sram
     06_fifo
 )
