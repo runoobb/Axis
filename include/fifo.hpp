@@ -18,27 +18,31 @@ public:
     sc_core::sc_in<T> in_data;
     sc_core::sc_in<bool> fus_valid;
     sc_core::sc_out<bool> tus_ready;
-    sc_core::sc_vector<sc_core::sc_out<T>> out_data;
+    sc_core::sc_out<T> out_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> fds_ready;
     sc_core::sc_out<bool> tds_valid;
+    sc_core::sc_in<bool> transfer_fus;
+    sc_core::sc_out<bool> transfer_tds;
 
     SC_HAS_PROCESS(FIFO);
 
     FIFO(sc_core::sc_module_name name,
+         std::size_t input_interval,
          std::size_t function_latency,
          sc_core::sc_time clock_period,
          std::size_t output_count,
          ModuleLogOptions log_options = {})
-        : BaseHW(name, 1, output_count, {0}, function_latency, clock_period),
+        : BaseHW(name, 1, output_count, {input_interval}, function_latency, clock_period),
           clk("clk"),
           in_data("in_data"),
           fus_valid("fus_valid"),
           tus_ready("tus_ready"),
-          out_data("out_data", output_count),
+          out_data("out_data"),
           fds_ready("fds_ready", output_count),
           tds_valid("tds_valid"),
           hw_pipe_(function_latency_) {
         assert(function_latency_ > 0);
+        // assert(input_interval_[0] == 0);
         if (output_count_ == 0) {
             throw std::invalid_argument("FIFO requires at least one output");
         }
@@ -46,6 +50,13 @@ public:
 
         SC_METHOD(hw_pipe_sim_);
         sensitive << clk.pos();
+        dont_initialize();
+
+        SC_METHOD(hw_transfer_sim_);
+        sensitive << tds_valid;
+        for (auto& ready : fds_ready) {
+            sensitive << ready;
+        }
         dont_initialize();
     }
 
@@ -55,7 +66,7 @@ public:
     }
 
     void hw_pipe_sim_() {
-        const bool do_deque = tds_valid.read() && all_downstream_ready();
+        const bool do_deque = transfer_tds.read();
 
         if (do_deque) {
             hw_pipe_.back().reset();
@@ -81,8 +92,7 @@ public:
             }
         }
 
-        const bool front_can_accept = !hw_pipe_.front().has_value();
-        const bool do_enque = tus_ready.read() && fus_valid.read() && front_can_accept;
+        const bool do_enque = transfer_fus.read();
 
         if (do_enque) {
             hw_pipe_.front() = in_data.read();
@@ -92,14 +102,22 @@ public:
         }
 
         if (hw_pipe_.back().has_value()) {
-            for (auto& data : out_data) {
-                data.write(*hw_pipe_.back());
-            }
+            out_data.write(hw_pipe_.back().value());
         }
-        tds_valid.write(hw_pipe_.back().has_value() && all_downstream_ready());
-        tus_ready.write(front_can_accept && input_cooldown_remaining_ == 0);
+        tds_valid.write(hw_pipe_.back().has_value());
 
         logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
+    }
+
+    void hw_transfer_sim_() {
+        const bool hw_pipe_not_full = 
+            std::any_of(hw_pipe_.begin(), hw_pipe_.end(), [](const auto& stage) {
+                return !stage.has_value();
+        });
+
+        transfer_tds.write(tds_valid.read() && all_downstream_ready());
+        // ( (hw_pipe_full but will transfer to downstream || hw_pipe_not_full) && all_cooldowns_expired )
+        tus_ready.write(((tds_valid.read() && all_downstream_ready()) || hw_pipe_not_full) && input_cooldown_remaining_ == 0);
     }
 
 private:

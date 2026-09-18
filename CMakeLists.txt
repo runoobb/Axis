@@ -18,10 +18,18 @@ target_link_directories(axis_hw PUBLIC ${SYSTEMC_HOME}/lib)
 target_link_libraries(axis_hw PUBLIC systemc pthread)
 
 set(AXIS_TEST_CASES
-    01_source_to_sink
-    02_source_broadcast_to_sink
+    # 01_source_to_sink
+    # 02_source_broadcast_to_sink
+    # 03_alu_two_input
     03_alu_two_input
+    # 04_arbiter
+    04_arbiter
+    # 05_sram
+    05_sram
+    06_fifo
 )
+
+enable_testing()
 
 foreach(test_case IN LISTS AXIS_TEST_CASES)
     set(test_target axis_test_${test_case})
@@ -30,4 +38,5 @@ foreach(test_case IN LISTS AXIS_TEST_CASES)
     target_compile_definitions(${test_target}
         PRIVATE AXIS_TEST_TRACE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/${test_case}"
     )
+    add_test(NAME ${test_target} COMMAND ${test_target})
 endforeach()

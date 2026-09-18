@@ -21,17 +21,20 @@ int sc_main(int, char**) {
     source.clk(clk);
     sink.clk(clk);
 
-    sc_core::sc_signal<int> data;
-    sc_core::sc_signal<bool> valid;
-    sc_core::sc_signal<bool> ready;
+    sc_core::sc_buffer<int> data;
+    sc_core::sc_buffer<bool> valid;
+    sc_core::sc_buffer<bool> ready;
+    sc_core::sc_buffer<bool> transfer;
 
-    source.out_data[0](data);
+    source.out_data(data);
     source.tds_valid(valid);
     source.fds_ready[0](ready);
+    source.transfer_tds(transfer);
 
     sink.in_data(data);
     sink.fus_valid(valid);
     sink.tus_ready(ready);
+    sink.transfer_fus(transfer);
 
     sc_core::sc_start(sc_core::sc_time(100, sc_core::SC_NS));
 

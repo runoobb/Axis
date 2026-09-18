@@ -28,7 +28,7 @@
 - 派生硬件模块继承 `BaseHW`。`BaseHW` 只作为配置/约束基类，保存 `input_count_`、`output_count_`、`input_interval_`、`function_latency_`、`clock_period_`，并提供 `cycles_to_time()`。
 - `input_interval_` 与 `function_latency_` 的单位均为时钟周期，不是 `sc_core::sc_time` 仿真时间。
 - 派生类需要继承并使用 `BaseHW` 的 `input_interval_`、`function_latency_` 等配置特性。
-- **不要变动alu.hpp, fifo.hpp, scalar_sink.hpp, scalar_source.hpp中的代码**
+<!-- - **不要变动scalar_sink.hpp, scalar_source.hpp中的代码** -->
 
 ## 端口valid-ready握手协议与input_interval_语义
 
@@ -48,14 +48,18 @@
 - valid-ready port中channel类型使用 `sc_signal`。data Port中，channel类型也使用 `sc_signal` 。
 
 
-## 统一流水线建模模式与正确性
+## **统一流水线建模模式**
+- 每个模块使用一个驱动的流水线仿真主进程（通常命名为 `hw_pipe_sim_`）统一拥有并更新内部流水线状态。
+- 当前实现中，`hw_pipe_sim_` 同时负责流水线状态推进、数据端口写出以及 ready/valid 信号更新。
+- 流水线主进程的代码实现在时钟边沿后按流水线末级到首级的顺序建模，hw_pipe_sim_执行完成一次后，数据结构中存储的值模拟的是下一个时钟周期时序寄存器将要采样到的信号。
+- 握手信号采用sc_signal作为实现的channel，由于SystemC的lazy-update特性，在下一仿真时间时下游组件在调用hw_pipe_sim_时，port.read()读取到的值是上一仿真时间时上游组件在hw_pipe_sim_中port.write()写入的值。hw_pipe_sim_()执行结束后，out_data中的数据和hw_pipe_.back()一致，表示下一周期下游可采样到的信号。
+- **所以模块的代码实现必须遵循的规范** 
+  - 除了scalar_sink中, do_deque 总是为 true，其他模块必须具有sc_out<bool> transfer_tds, sc_in<bool> transfer_fus, 用于表示下一周期是否能向下游模块传输数据。**必须** do_deque = transfer_tds.read()，因为do_deque表示对下一时钟周期下游模块是否能采样到当前模块out_data信号进行**预测**。(do_deque应该实现为fds_ready敏感的单独SC_METHOD，在delta-cycle中执行)
+  - 禁止使用局部变量do_enque。
+  - transfer_ds只能在hw_pipe_sim_以外的SC_METHOD中更新，注册函数ds_hndshk(downstream_handshake)，sensitive << fds_ready << tds_valid，函数体只需要transfer_.write()
+  - 确保各种情况下，上游模块发生do_deque后的下一仿真时钟周期，连接到的下游模块必定从in_data中采样到out_data。
 
-派生硬件模块应以 `include/fifo.hpp` 的当前实现为模范：
-
-- 每个模块使用一个时钟驱动的流水线主进程（通常命名为 `hw_pipe_sim_`）统一拥有并更新内部流水线状态。
-- 当前实现中，`hw_pipe_sim_` 同时负责流水线状态推进、数据端口写出以及 ready/valid 信号更新，不再拆分额外的维护 ready/valid SC_METHOD函数进程。
-- 流水线主进程的代码实现在时钟边沿后按流水线末级到首级的顺序建模，hw_pipe_sim_执行完成一次后，数据结构中存储的值模拟的是下一个时钟周期时序寄存器将要采样到的信号，而握手信号采用sc_signal作为实现的channel，由于SystemC的lazy-update特性，在下一仿真时间时下游组件在调用hw_pipe_sim_时，port.read()读取到的值是上一仿真时间时上游组件在hw_pipe_sim_中port.write()写入的值。
-- 通过以上统一的流水线建模模式，确保在同一仿真时间下，各个组件SC_METHOD对clk.pos()信号敏感，在仿真内核不确定执行的背景下，维护了建模结果的正确性。
+- 通过以上统一的流水线建模模式，各个组件SC_METHOD对clk.pos()信号敏感，确保在同一仿真时间下，且尽管SystemC仿真内核具有不确定执行的特性，维护了建模结果的正确性。
 
 
 ## function_latency_

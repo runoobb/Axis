@@ -25,11 +25,11 @@ int sc_main(int, char**) {
     const ModuleLogOptions sink_log{true, axis_test::trace_path("sink.txt")};
     const ModuleLogOptions second_sink_log{true, axis_test::trace_path("second_sink.txt")};
 
-    ScalarSource<int> left_source("left_source", left_values, 2, 1, clock_period, 1, left_log);
-    ScalarSource<int> right_source("right_source", right_values, 5, 1, clock_period, 1, right_log);
-    ALU<int, std::plus<int>> alu("alu", {4, 4}, 3, clock_period, 2, std::plus<int>{}, alu_log);
-    ScalarSink<int> sink("sink", 3, 1, clock_period, sink_log);
-    ScalarSink<int> second_sink("second_sink", 6, 1, clock_period, second_sink_log);
+    ScalarSource<int> left_source("left_source", left_values, 0, 1, clock_period, 1, left_log);
+    ScalarSource<int> right_source("right_source", right_values, 0, 1, clock_period, 1, right_log);
+    ALU<int, std::plus<int>> alu("alu", {0, 0}, 3, clock_period, 2, std::plus<int>{}, alu_log);
+    ScalarSink<int> sink("sink", 0, 1, clock_period, sink_log);
+    ScalarSink<int> second_sink("second_sink", 0, 1, clock_period, second_sink_log);
 
     left_source.clk(clk);
     right_source.clk(clk);
@@ -37,95 +37,56 @@ int sc_main(int, char**) {
     sink.clk(clk);
     second_sink.clk(clk);
 
-    sc_core::sc_signal<int> left_data;
-    sc_core::sc_signal<bool> left_valid;
-    sc_core::sc_signal<bool> left_ready;
+    sc_core::sc_buffer<int> left_data;
+    sc_core::sc_buffer<bool> left_valid;
+    sc_core::sc_buffer<bool> left_transfer;
 
-    sc_core::sc_signal<int> right_data;
-    sc_core::sc_signal<bool> right_valid;
-    sc_core::sc_signal<bool> right_ready;
+    sc_core::sc_buffer<int> right_data;
+    sc_core::sc_buffer<bool> right_valid;
+    sc_core::sc_buffer<bool> right_transfer;
 
-    sc_core::sc_signal<int> result_data;
-    sc_core::sc_signal<int> second_result_data;
-    sc_core::sc_signal<bool> result_valid;
-    sc_core::sc_signal<bool> result_ready;
-    sc_core::sc_signal<bool> second_result_ready;
+    // Single shared ready line: both operand sources handshake jointly with the ALU.
+    sc_core::sc_buffer<bool> operand_ready;
 
-    left_source.out_data[0](left_data);
+    sc_core::sc_buffer<int> result_data;
+    sc_core::sc_buffer<bool> result_valid;
+    sc_core::sc_buffer<bool> result_ready;
+    sc_core::sc_buffer<bool> second_result_ready;
+    sc_core::sc_buffer<bool> result_transfer;
+
+    left_source.out_data(left_data);
     left_source.tds_valid(left_valid);
-    left_source.fds_ready[0](left_ready);
+    left_source.fds_ready[0](operand_ready);
+    left_source.transfer_tds(left_transfer);
     alu.in_data[0](left_data);
     alu.fus_valid[0](left_valid);
-    alu.tus_ready[0](left_ready);
+    alu.tus_ready(operand_ready);
+    alu.transfer_fus[0](left_transfer);
 
-    right_source.out_data[0](right_data);
+    right_source.out_data(right_data);
     right_source.tds_valid(right_valid);
-    right_source.fds_ready[0](right_ready);
+    right_source.fds_ready[0](operand_ready);
+    right_source.transfer_tds(right_transfer);
     alu.in_data[1](right_data);
     alu.fus_valid[1](right_valid);
-    alu.tus_ready[1](right_ready);
+    alu.transfer_fus[1](right_transfer);
 
-    alu.out_data[0](result_data);
-    alu.out_data[1](second_result_data);
+    alu.out_data(result_data);
     alu.tds_valid(result_valid);
     alu.fds_ready[0](result_ready);
     alu.fds_ready[1](second_result_ready);
+    alu.transfer_tds(result_transfer);
 
     sink.in_data(result_data);
     sink.fus_valid(result_valid);
     sink.tus_ready(result_ready);
-    second_sink.in_data(second_result_data);
+    sink.transfer_fus(result_transfer);
+    second_sink.in_data(result_data);
     second_sink.fus_valid(result_valid);
     second_sink.tus_ready(second_result_ready);
+    second_sink.transfer_fus(result_transfer);
 
     sc_core::sc_start(sc_core::sc_time(300, sc_core::SC_NS));
 
-    // const auto enqueues = [](const std::string& path) {
-    //     std::ifstream trace(path);
-    //     std::vector<std::pair<std::size_t, int>> entries;
-    //     std::string line;
-    //     while (std::getline(trace, line)) {
-    //         if (line.find("enqueued=1") == std::string::npos) {
-    //             continue;
-    //         }
-    //         const auto cycle_start = line.find("cycle=") + 6;
-    //         const auto value_start = line.find("pipe=[") + 6;
-    //         entries.emplace_back(std::stoul(line.substr(cycle_start)),
-    //                              std::stoi(line.substr(value_start)));
-    //     }
-    //     return entries;
-    // };
-
-    // const auto results = enqueues(alu_log.file_path);
-    // const auto fast = enqueues(sink_log.file_path);
-    // const auto slow = enqueues(second_sink_log.file_path);
-    // const auto dequeues = [](const std::string& path) {
-    //     std::ifstream trace(path);
-    //     std::vector<std::size_t> cycles;
-    //     std::string line;
-    //     while (std::getline(trace, line)) {
-    //         if (line.find("dequeued=1") != std::string::npos) {
-    //             cycles.push_back(std::stoul(line.substr(line.find("cycle=") + 6)));
-    //         }
-    //     }
-    //     return cycles;
-    // };
-    // const auto left_transfers = dequeues(left_log.file_path);
-    // const auto right_transfers = dequeues(right_log.file_path);
-    // const auto output_transfers = dequeues(alu_log.file_path);
-    // if (results.size() != expected.size() || fast != slow || fast.size() != expected.size()
-    //     || left_transfers.size() != expected.size() || right_transfers.size() != expected.size()
-    //     || output_transfers.size() != expected.size()) {
-    //     SC_REPORT_ERROR("sc_main", "ALU input pairing or broadcast transfer count mismatch");
-    // } else {
-    //     for (std::size_t i = 0; i < expected.size(); ++i) {
-    //         if (results[i].second != expected[i] || fast[i].second != expected[i]
-    //             || left_transfers[i] > results[i].first || right_transfers[i] > results[i].first
-    //             || output_transfers[i] != fast[i].first
-    //             || (i > 0 && fast[i].first - fast[i - 1].first <= 6)) {
-    //             SC_REPORT_ERROR("sc_main", "ALU input pairing or broadcast backpressure mismatch");
-    //         }
-    //     }
-    // }
     return axis_test::report_status_code();
 }

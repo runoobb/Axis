@@ -18,10 +18,16 @@ public:
     sc_core::sc_in<bool> clk;
     sc_core::sc_vector<sc_core::sc_in<T>> in_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> fus_valid;
-    sc_core::sc_vector<sc_core::sc_out<bool>> tus_ready;
-    sc_core::sc_vector<sc_core::sc_out<T>> out_data;
+    // A multi-input ALU exposes a single ready line shared by every upstream port: the inputs
+    // handshake jointly, so no upstream can retire its payload ahead of its partners.
+    sc_core::sc_out<bool> tus_ready;
+    sc_core::sc_out<T> out_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> fds_ready;
     sc_core::sc_out<bool> tds_valid;
+    // One transfer line per upstream port: every upstream drives its own transfer_tds, and the
+    // joint handshake only enqueues once all of them signal a transfer for the next cycle.
+    sc_core::sc_vector<sc_core::sc_in<bool>> transfer_fus;
+    sc_core::sc_out<bool> transfer_tds;
 
     SC_HAS_PROCESS(ALU);
 
@@ -36,14 +42,15 @@ public:
           clk("clk"),
           in_data("in_data", input_count_),
           fus_valid("fus_valid", input_count_),
-          tus_ready("tus_ready", input_count_),
-          out_data("out_data", output_count_),
+          tus_ready("tus_ready"),
+          out_data("out_data"),
           fds_ready("fds_ready", output_count_),
           tds_valid("tds_valid"),
+          transfer_fus("transfer_fus", input_count_),
+          transfer_tds("transfer_tds"),
           op_(std::move(op)),
           hw_pipe_(function_latency_),
-          input_cooldown_remaining_(input_count_, 0),
-          pending_inputs_(input_count_) {
+          input_cooldown_remaining_(input_count_, 0) {
         assert(function_latency_ > 0);
         if (output_count_ == 0) {
             throw std::invalid_argument("ALU requires at least one output");
@@ -53,12 +60,22 @@ public:
         SC_METHOD(hw_pipe_sim_);
         sensitive << clk.pos();
         dont_initialize();
+
+        SC_METHOD(hw_transfer_sim_);
+        sensitive << tds_valid;
+        for (auto& valid : fus_valid) {
+            sensitive << valid;
+        }
+        for (auto& ready : fds_ready) {
+            sensitive << ready;
+        }
+        dont_initialize();
     }
 
     void end_of_elaboration() override {
-        for (auto& ready : tus_ready) {
-            ready.write(true);
-        }
+        // Ready may only rise once every upstream port has been observed valid together,
+        // otherwise an early handshake would drop a payload that has nowhere to be held.
+        tus_ready.write(false);
         tds_valid.write(false);
     }
 
@@ -67,10 +84,11 @@ private:
     std::vector<std::optional<T>> hw_pipe_;
     ModuleLogger logger_;
     std::vector<std::size_t> input_cooldown_remaining_;
-    std::vector<std::optional<T>> pending_inputs_;
+    // Pipeline-side half of the tus_ready condition, owned by hw_pipe_sim_ and consumed by the
+    // delta-cycle re-evaluation below.
 
     void hw_pipe_sim_() {
-        const bool do_deque = tds_valid.read() && all_downstream_ready();
+        const bool do_deque = transfer_tds.read();
 
         if (do_deque) {
             hw_pipe_.back().reset();
@@ -89,39 +107,52 @@ private:
             }
         }
 
-        const bool front_can_accept = !hw_pipe_.front().has_value();
+        const bool do_enque = std::all_of(transfer_fus.begin(), transfer_fus.end(), [](const auto& transfer) {
+            return transfer.read();
+        });
+
+        if (do_enque) {
+            hw_pipe_.front() = static_cast<T>(op_(in_data[0].read(), in_data[1].read()));
+        }
+
         for (std::size_t port = 0; port < input_count_; ++port) {
-            if (tus_ready[port].read() && fus_valid[port].read() && front_can_accept
-                && !pending_inputs_[port].has_value()) {
-                pending_inputs_[port] = in_data[port].read();
+            if (do_enque) {
                 input_cooldown_remaining_[port] = input_interval_[port];
             } else if (input_cooldown_remaining_[port] > 0) {
                 --input_cooldown_remaining_[port];
             }
         }
 
-        const bool do_enque = front_can_accept && pending_inputs_[0].has_value()
-                              && pending_inputs_[1].has_value();
-        if (do_enque) {
-            hw_pipe_.front() = static_cast<T>(op_(*pending_inputs_[0], *pending_inputs_[1]));
-            for (auto& input : pending_inputs_) {
-                input.reset();
-            }
-        }
-
         if (hw_pipe_.back().has_value()) {
-            for (auto& data : out_data) {
-                data.write(*hw_pipe_.back());
-            }
+            out_data.write(hw_pipe_.back().value());
         }
-        tds_valid.write(hw_pipe_.back().has_value() && all_downstream_ready());
-
-        for (std::size_t port = 0; port < input_count_; ++port) {
-            tus_ready[port].write(front_can_accept && !pending_inputs_[port].has_value()
-                                  && input_cooldown_remaining_[port] == 0);
-        }
+        tds_valid.write(hw_pipe_.back().has_value());
 
         logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
+    }
+
+    // Why need this update_tus_ready_next_cycle() function?
+    // Because for sc_signal, at end of current simulation time, ensure that they are up to date at current cycle
+    // For a joint handshake, tus_ready is combinational logic to fus_valid, affected by upstream modules.
+    // So it need to be decoupled from hw_pipe_sim_(), re-evaluate at delta cycle
+    void hw_transfer_sim_() {
+
+        const bool all_upstream_valid = std::all_of(fus_valid.begin(), fus_valid.end(), [](const auto& valid) {
+            return valid.read();
+        });
+
+        const bool all_cooldowns_expired =
+            std::all_of(input_cooldown_remaining_.begin(), input_cooldown_remaining_.end(), [](std::size_t remaining) { 
+                return remaining == 0; 
+        });
+
+        const bool hw_pipe_not_full = 
+            std::any_of(hw_pipe_.begin(), hw_pipe_.end(), [](const auto& stage) {
+                return !stage.has_value();
+        });
+
+        transfer_tds.write(tds_valid.read() && all_downstream_ready());
+        tus_ready.write(((tds_valid.read() && all_downstream_ready()) || hw_pipe_not_full) && all_cooldowns_expired && all_upstream_valid);
     }
 
     bool all_downstream_ready() const {

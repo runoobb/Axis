@@ -11,13 +11,28 @@
 #include <utility>
 #include <vector>
 
+// ScalarSource models the data producer of the example system.
+//
+// Unified pipeline modelling pattern:
+// a single clock driven process, hw_pipe_sim_, owns hw_pipe_ and is written
+// from the last stage towards the first stage. After one invocation hw_pipe_
+// holds the values the sequential registers will sample on the next clock
+// edge, while out_data / tds_valid are sc_signals whose lazy update lets the
+// downstream modules read the values written during the previous evaluation.
+//
+// do_deque is derived purely from the handshake signals and is therefore
+// computed by its own delta-cycle process, deque_predict_, instead of being
+// evaluated inside hw_pipe_sim_. It is a *prediction*: it states whether the
+// downstream modules will sample out_data on the next clock edge, so that a
+// do_deque here is always matched by a do_enque downstream one cycle later.
 template <typename T = int>
 class ScalarSource : public sc_core::sc_module {
 public:
     sc_core::sc_in<bool> clk;
-    sc_core::sc_vector<sc_core::sc_out<T>> out_data;
+    sc_core::sc_out<T> out_data;
     sc_core::sc_out<bool> tds_valid;
     sc_core::sc_vector<sc_core::sc_in<bool>> fds_ready;
+    sc_core::sc_out<bool> transfer_tds;
 
     SC_HAS_PROCESS(ScalarSource);
 
@@ -30,14 +45,13 @@ public:
                  ModuleLogOptions log_options = {})
         : sc_core::sc_module(name),
           clk("clk"),
-          out_data("out_data", output_count),
+          out_data("out_data"),
           tds_valid("tds_valid"),
           fds_ready("fds_ready", output_count),
+          transfer_tds("transfer_tds"),
           values_(std::move(values)),
-          output_interval_(output_interval),
           function_latency_(function_latency),
-          hw_pipe_(function_latency_),
-          output_interval_remaining_(output_interval_) {
+          hw_pipe_(function_latency){
         assert(function_latency_ > 0);
         if (output_count == 0) {
             throw std::invalid_argument("ScalarSource requires at least one output");
@@ -46,6 +60,16 @@ public:
 
         SC_METHOD(hw_pipe_sim_);
         sensitive << clk.pos();
+        dont_initialize();
+
+        // do_deque is a pure function of the handshake signals, so it is
+        // recomputed in the delta cycle whenever one of them changes rather
+        // than being sampled on the clock edge.
+        SC_METHOD(hw_transfer_sim_);
+        sensitive << tds_valid;
+        for (auto& ready : fds_ready) {
+            sensitive << ready;
+        }
         dont_initialize();
     }
 
@@ -56,66 +80,67 @@ public:
 private:
     std::vector<T> values_;
     std::size_t next_value_{0};
-    std::size_t output_interval_;
     std::size_t function_latency_;
     std::vector<std::optional<T>> hw_pipe_;
     ModuleLogger logger_;
-    std::size_t output_interval_remaining_{0};
 
     void hw_pipe_sim_() {
-        const bool do_deque = tds_valid.read() && all_downstream_ready();
-        // const bool do_enque = !hw_pipe_.back().has_value() && all_downstream_ready();
-
-        if (do_deque) {
+        // ------------------------------------------------------------
+        // Last stage: downstream valid-ready handshake.
+        //
+        // The single output port may feed several downstream input ports, so
+        // the handshake only completes once every one of them is ready.
+        // ------------------------------------------------------------
+        const bool do_deque = transfer_tds.read();
+        
+        if (do_deque) 
             hw_pipe_.back().reset();
-        }
 
         // ------------------------------------------------------------
-        // Move pipeline stages.
+        // Intermediate stages: advance the pipeline.
         //
         // IMPORTANT:
-        // Iterate from back to front so that every item moves
-        // at most ONE stage in one clock cycle.
+        // Iterate from the last stage towards the first one so that every
+        // item moves at most ONE stage in one clock cycle.
         // ------------------------------------------------------------
-        if(function_latency_ > 1) {
-            for (std::size_t i = function_latency_ - 1; i > 0; --i) {
-                if (!hw_pipe_[i].has_value() &&
-                    hw_pipe_[i - 1].has_value()) {
-
-                    hw_pipe_[i] =
-                        std::move(hw_pipe_[i - 1]);
-
-                    hw_pipe_[i - 1].reset();
-                }
+        for (std::size_t i = function_latency_ - 1; i > 0; --i) {
+            if (!hw_pipe_[i].has_value() && hw_pipe_[i - 1].has_value()) {
+                hw_pipe_[i] = std::move(hw_pipe_[i - 1]);
+                hw_pipe_[i - 1].reset();
             }
         }
 
-        // do_enque should be calculated here after the state of hw_pipe_ has been updated for this cycle
-        const bool do_enque = !hw_pipe_.front().has_value() && next_value_ < values_.size()
-                              && output_interval_remaining_ == 0;   
+        // ------------------------------------------------------------
+        // First stage: inject the next value.
+        //
+        // Evaluated after the shift above so that it observes the pipeline
+        // state of this cycle. The source has no upstream port, so the only
+        // pacing is the output_interval_ cooldown.
+        // ------------------------------------------------------------
+        const bool do_enque = !hw_pipe_.front().has_value();
 
-        if (do_enque) {
+        if(do_enque && next_value_ < values_.size()){
             hw_pipe_.front() = values_[next_value_++];
-            output_interval_remaining_ = output_interval_;
-        } else if (output_interval_remaining_ > 0) {
-            --output_interval_remaining_;
         }
+
 
         if (hw_pipe_.back().has_value()) {
-            for (auto& data : out_data) {
-                data.write(*hw_pipe_.back());
-            }
+            out_data.write(*hw_pipe_.back());
         }
         
-        tds_valid.write(hw_pipe_.back().has_value() && all_downstream_ready());
+        tds_valid.write(hw_pipe_.back().has_value());
+
         logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
     }
 
+    void hw_transfer_sim_() {
+        transfer_tds.write(tds_valid.read() && all_downstream_ready());
+        // tus_ready.write(tds_valid.read() && all_downstream_ready() | hw_pipe_.front().has_value());
+    }
 
     bool all_downstream_ready() const {
         return std::all_of(fds_ready.begin(), fds_ready.end(), [](const auto& ready) {
             return ready.read();
         });
     }
-
 };

@@ -9,6 +9,14 @@
 #include <utility>
 #include <vector>
 
+// ScalarSink models the data consumer of the example system.
+//
+// Unified pipeline modelling pattern:
+// a single clock driven process, hw_pipe_sim_, owns hw_pipe_ and is written
+// from the last stage towards the first stage. After one invocation hw_pipe_
+// holds the values the sequential registers will sample on the next clock
+// edge, while tus_ready is an sc_signal whose lazy update lets the upstream
+// module read the value written during the previous evaluation.
 template <typename T = int>
 class ScalarSink : public sc_core::sc_module {
 public:
@@ -16,6 +24,7 @@ public:
     sc_core::sc_in<T> in_data;
     sc_core::sc_in<bool> fus_valid;
     sc_core::sc_out<bool> tus_ready;
+    sc_core::sc_in<bool> transfer_fus;
 
     SC_HAS_PROCESS(ScalarSink);
 
@@ -29,6 +38,7 @@ public:
           in_data("in_data"),
           fus_valid("fus_valid"),
           tus_ready("tus_ready"),
+          transfer_fus("transfer_fus"),
           input_interval_(input_interval),
           function_latency_(function_latency),
           hw_pipe_(function_latency) {
@@ -52,34 +62,39 @@ private:
     std::size_t input_cooldown_remaining_{0};
 
     void hw_pipe_sim_() {
-        const bool do_deque = hw_pipe_.back().has_value();
-
-        if (do_deque) {
-            hw_pipe_.back().reset();
-        }
+        // ------------------------------------------------------------
+        // Last stage: retire the data.
+        //
+        // The sink owns no downstream port, so the last stage always has
+        // room to sink its data and never stalls the pipeline.
+        // ------------------------------------------------------------
+        constexpr bool do_deque = true;
+        hw_pipe_.back().reset();
 
         // ------------------------------------------------------------
-        // Move pipeline stages.
+        // Intermediate stages: advance the pipeline.
         //
         // IMPORTANT:
-        // Iterate from back to front so that every item moves
-        // at most ONE stage in one clock cycle.
+        // Iterate from the last stage towards the first one so that every
+        // item moves at most ONE stage in one clock cycle.
         // ------------------------------------------------------------
-        if(function_latency_ > 1) {
-            for (std::size_t i = function_latency_ - 1; i > 0; --i) {
-                if (!hw_pipe_[i].has_value() &&
-                    hw_pipe_[i - 1].has_value()) {
-
-                    hw_pipe_[i] =
-                        std::move(hw_pipe_[i - 1]);
-
-                    hw_pipe_[i - 1].reset();
-                }
+        for (std::size_t i = function_latency_ - 1; i > 0; --i) {
+            if (!hw_pipe_[i].has_value() && hw_pipe_[i - 1].has_value()) {
+                hw_pipe_[i] = std::move(hw_pipe_[i - 1]);
+                hw_pipe_[i - 1].reset();
             }
         }
 
-        const bool front_can_accept = !hw_pipe_.front().has_value();
-        const bool do_enque = tus_ready.read() && fus_valid.read() && front_can_accept;
+        // ------------------------------------------------------------
+        // First stage: upstream valid-ready handshake.
+        //
+        // tus_ready already carries the "stage 0 has room" condition, so the
+        // handshake reduces to a plain valid && ready test. Because the last
+        // stage retires unconditionally and the shift above runs back to
+        // front, stage 0 is always free at this point; the only backpressure
+        // the sink applies is the input_interval_ cooldown.
+        // ------------------------------------------------------------
+        const bool do_enque = transfer_fus.read();
 
         if (do_enque) {
             hw_pipe_.front() = in_data.read();
@@ -88,7 +103,11 @@ private:
             --input_cooldown_remaining_;
         }
 
-        tus_ready.write(front_can_accept && input_cooldown_remaining_ == 0);
+        // ------------------------------------------------------------
+        // Drive the handshake signal the upstream module reads on the next
+        // clock edge.
+        // ------------------------------------------------------------
+        tus_ready.write(input_cooldown_remaining_ == 0);
 
         logger_.log_pipeline(hw_pipe_, do_deque, do_enque);
     }
