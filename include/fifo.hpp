@@ -21,8 +21,6 @@ public:
     sc_core::sc_out<T> out_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> fds_ready;
     sc_core::sc_out<bool> tds_valid;
-    sc_core::sc_in<bool> transfer_fus;
-    sc_core::sc_out<bool> transfer_tds;
 
     SC_HAS_PROCESS(FIFO);
 
@@ -66,7 +64,7 @@ public:
     }
 
     void hw_pipe_sim_() {
-        const bool do_deque = transfer_tds.read();
+        const bool do_deque = tds_valid.read() && all_downstream_ready();
 
         if (do_deque) {
             hw_pipe_.back().reset();
@@ -92,7 +90,7 @@ public:
             }
         }
 
-        const bool do_enque = transfer_fus.read();
+        const bool do_enque = tus_ready.read() && fus_valid.read();
 
         if (do_enque) {
             hw_pipe_.front() = in_data.read();
@@ -115,7 +113,6 @@ public:
                 return !stage.has_value();
         });
 
-        transfer_tds.write(tds_valid.read() && all_downstream_ready());
         // ( (hw_pipe_full but will transfer to downstream || hw_pipe_not_full) && all_cooldowns_expired )
         tus_ready.write(((tds_valid.read() && all_downstream_ready()) || hw_pipe_not_full) && input_cooldown_remaining_ == 0);
     }

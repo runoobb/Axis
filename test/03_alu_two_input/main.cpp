@@ -39,11 +39,9 @@ int sc_main(int, char**) {
 
     sc_core::sc_buffer<int> left_data;
     sc_core::sc_buffer<bool> left_valid;
-    sc_core::sc_buffer<bool> left_transfer;
 
     sc_core::sc_buffer<int> right_data;
     sc_core::sc_buffer<bool> right_valid;
-    sc_core::sc_buffer<bool> right_transfer;
 
     // Single shared ready line: both operand sources handshake jointly with the ALU.
     sc_core::sc_buffer<bool> operand_ready;
@@ -52,39 +50,31 @@ int sc_main(int, char**) {
     sc_core::sc_buffer<bool> result_valid;
     sc_core::sc_buffer<bool> result_ready;
     sc_core::sc_buffer<bool> second_result_ready;
-    sc_core::sc_buffer<bool> result_transfer;
 
     left_source.out_data(left_data);
     left_source.tds_valid(left_valid);
     left_source.fds_ready[0](operand_ready);
-    left_source.transfer_tds(left_transfer);
     alu.in_data[0](left_data);
     alu.fus_valid[0](left_valid);
     alu.tus_ready(operand_ready);
-    alu.transfer_fus[0](left_transfer);
 
     right_source.out_data(right_data);
     right_source.tds_valid(right_valid);
     right_source.fds_ready[0](operand_ready);
-    right_source.transfer_tds(right_transfer);
     alu.in_data[1](right_data);
     alu.fus_valid[1](right_valid);
-    alu.transfer_fus[1](right_transfer);
 
     alu.out_data(result_data);
     alu.tds_valid(result_valid);
     alu.fds_ready[0](result_ready);
     alu.fds_ready[1](second_result_ready);
-    alu.transfer_tds(result_transfer);
 
     sink.in_data(result_data);
     sink.fus_valid(result_valid);
     sink.tus_ready(result_ready);
-    sink.transfer_fus(result_transfer);
     second_sink.in_data(result_data);
     second_sink.fus_valid(result_valid);
     second_sink.tus_ready(second_result_ready);
-    second_sink.transfer_fus(result_transfer);
 
     sc_core::sc_start(sc_core::sc_time(300, sc_core::SC_NS));
 

@@ -55,13 +55,10 @@ public:
     sc_core::sc_out<DataT> read_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> read_fds_ready;
     sc_core::sc_out<bool> read_tds_valid;
-    sc_core::sc_in<bool> read_transfer_fus;
-    sc_core::sc_out<bool> read_transfer_tds;
 
     sc_core::sc_in<AddrT> write_addr;
     sc_core::sc_in<DataT> write_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> write_fus_valid;
-    sc_core::sc_vector<sc_core::sc_in<bool>> write_transfer_fus;
     // The write channel exposes a single ready line shared by both upstream ports: addr and
     // data handshake jointly, so neither upstream can retire its payload ahead of the other.
     sc_core::sc_out<bool> write_tus_ready;
@@ -86,12 +83,9 @@ public:
           read_data("read_data"),
           read_fds_ready("read_fds_ready", output_count_),
           read_tds_valid("read_tds_valid"),
-          read_transfer_fus("read_transfer_fus"),
-          read_transfer_tds("read_transfer_tds"),
           write_addr("write_addr"),
           write_data("write_data"),
           write_fus_valid("write_fus_valid", 2),
-          write_transfer_fus("write_transfer_fus", 2),
           write_tus_ready("write_tus_ready"),
           memory_(depth, initial_value),
           read_pipe_(function_latency_),
@@ -136,16 +130,12 @@ public:
         for (auto& valid : write_fus_valid) {
             sensitive << valid;
         }
-        for (auto& transfer : write_transfer_fus) {
-            sensitive << transfer;
-        }
         dont_initialize();
     }
 
     void end_of_elaboration() override {
         read_tus_ready.write(true);
         read_tds_valid.write(false);
-        read_transfer_tds.write(false);
         // Ready may only rise once both write ports have been observed valid together,
         // otherwise an early handshake would drop a payload that has nowhere to be held.
         write_tus_ready.write(false);
@@ -169,13 +159,13 @@ private:
     ModuleLogger write_logger_;
 
     void read_hw_pipe_sim_() {
-        const bool do_deque = read_transfer_tds.read();
+        const bool do_deque = read_tds_valid.read() && all_read_downstream_ready_();
 
         if (do_deque) {
             read_pipe_.back().reset();
         }
 
-        const bool do_enque = read_transfer_fus.read();
+        const bool do_enque = read_tus_ready.read() && read_fus_valid.read();
 
         if (do_enque) {
             const AddrT addr = read_addr.read();
@@ -205,8 +195,8 @@ private:
             write_pipe_.back().reset();
         }
 
-        const bool do_enque = std::all_of(write_transfer_fus.begin(), write_transfer_fus.end(), [](const auto& transfer) {
-            return transfer.read();
+        const bool do_enque = write_tus_ready.read() && std::all_of(write_fus_valid.begin(), write_fus_valid.end(), [](const auto& valid) {
+            return valid.read();
         });
 
         if (do_enque) {
@@ -233,8 +223,6 @@ private:
     // So it need to be decoupled from write_hw_pipe_sim_(), re-evaluate at delta cycle
 
     void read_hw_transfer_sim_() {
-        read_transfer_tds.write(read_tds_valid.read() && all_read_downstream_ready_());
-        
         const bool read_pipe_not_full =
             std::any_of(read_pipe_.begin(), read_pipe_.end(), [](const auto& stage) {
                 return !stage.has_value();

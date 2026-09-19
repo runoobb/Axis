@@ -24,7 +24,6 @@ public:
     sc_core::sc_in<T> in_data;
     sc_core::sc_in<bool> fus_valid;
     sc_core::sc_out<bool> tus_ready;
-    sc_core::sc_in<bool> transfer_fus;
 
     SC_HAS_PROCESS(ScalarSink);
 
@@ -38,7 +37,6 @@ public:
           in_data("in_data"),
           fus_valid("fus_valid"),
           tus_ready("tus_ready"),
-          transfer_fus("transfer_fus"),
           input_interval_(input_interval),
           function_latency_(function_latency),
           hw_pipe_(function_latency) {
@@ -94,7 +92,7 @@ private:
         // front, stage 0 is always free at this point; the only backpressure
         // the sink applies is the input_interval_ cooldown.
         // ------------------------------------------------------------
-        const bool do_enque = transfer_fus.read();
+        const bool do_enque = tus_ready.read() && fus_valid.read();
 
         if (do_enque) {
             hw_pipe_.front() = in_data.read();

@@ -22,8 +22,6 @@ public:
     sc_core::sc_out<T> out_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> fds_ready;
     sc_core::sc_out<bool> tds_valid;
-    sc_core::sc_vector<sc_core::sc_in<bool>> transfer_fus;
-    sc_core::sc_out<bool> transfer_tds;
 
     SC_HAS_PROCESS(Arbiter);
 
@@ -47,8 +45,6 @@ public:
           out_data("out_data"),
           fds_ready("fds_ready", output_count_),
           tds_valid("tds_valid"),
-          transfer_fus("transfer_fus", input_count_),
-          transfer_tds("transfer_tds"),
           hw_pipe_(function_latency_),
           input_cooldown_remaining_(input_count_, 0) {
         assert(function_latency_ > 0);
@@ -83,7 +79,6 @@ public:
             tus_ready[port].write(false);
         }
         tds_valid.write(false);
-        transfer_tds.write(false);
     }
 
 private:
@@ -94,7 +89,7 @@ private:
     std::vector<std::size_t> input_cooldown_remaining_;
 
     void hw_pipe_sim_() {
-        const bool do_deque = transfer_tds.read();
+        const bool do_deque = tds_valid.read() && all_downstream_ready_();
 
         // AT CURRENT LINE, std::vector<> hw_pipe_ store values of previous cycle
         // if do_deque == true, then hw_pipe_.back() is sampled by downstream at clock posedge of current cycle by in_data.read()
@@ -114,7 +109,7 @@ private:
         }
 
         const auto grant = select_grant_();
-        const bool do_enque = grant.has_value() && transfer_fus[*grant].read();
+        const bool do_enque = grant.has_value() && tus_ready[*grant].read() && fus_valid[*grant].read();
         if (do_enque) {
             hw_pipe_.front() = in_data[*grant].read();
         }
@@ -155,8 +150,6 @@ private:
     }
 
     void hw_transfer_sim_() {
-        transfer_tds.write(tds_valid.read() && all_downstream_ready_());
-
         const bool hw_pipe_not_full =
             std::any_of(hw_pipe_.begin(), hw_pipe_.end(), [](const auto& stage) {
                 return !stage.has_value();

@@ -54,57 +54,44 @@ int sc_main(int, char**) {
     sc_core::sc_buffer<bool> high_ready;
     sc_core::sc_buffer<bool> mid_ready;
     sc_core::sc_buffer<bool> low_ready;
-    sc_core::sc_buffer<bool> high_transfer;
-    sc_core::sc_buffer<bool> mid_transfer;
-    sc_core::sc_buffer<bool> low_transfer;
 
     sc_core::sc_buffer<int> arbiter_data;
     sc_core::sc_buffer<bool> arbiter_valid;
-    sc_core::sc_buffer<bool> arbiter_transfer;
     sc_core::sc_buffer<bool> fast_ready;
     sc_core::sc_buffer<bool> slow_ready;
 
     high_source.out_data(high_data);
     high_source.tds_valid(high_valid);
     high_source.fds_ready[0](high_ready);
-    high_source.transfer_tds(high_transfer);
     arbiter.in_data[0](high_data);
     arbiter.fus_valid[0](high_valid);
-    arbiter.transfer_fus[0](high_transfer);
     arbiter.tus_ready[0](high_ready);
 
     mid_source.out_data(mid_data);
     mid_source.tds_valid(mid_valid);
     mid_source.fds_ready[0](mid_ready);
-    mid_source.transfer_tds(mid_transfer);
     arbiter.in_data[1](mid_data);
     arbiter.fus_valid[1](mid_valid);
-    arbiter.transfer_fus[1](mid_transfer);
     arbiter.tus_ready[1](mid_ready);
 
     low_source.out_data(low_data);
     low_source.tds_valid(low_valid);
     low_source.fds_ready[0](low_ready);
-    low_source.transfer_tds(low_transfer);
     arbiter.in_data[2](low_data);
     arbiter.fus_valid[2](low_valid);
-    arbiter.transfer_fus[2](low_transfer);
     arbiter.tus_ready[2](low_ready);
 
     arbiter.out_data(arbiter_data);
     arbiter.tds_valid(arbiter_valid);
-    arbiter.transfer_tds(arbiter_transfer);
     arbiter.fds_ready[0](fast_ready);
     arbiter.fds_ready[1](slow_ready);
 
     fast_sink.in_data(arbiter_data);
     fast_sink.fus_valid(arbiter_valid);
     fast_sink.tus_ready(fast_ready);
-    fast_sink.transfer_fus(arbiter_transfer);
     slow_sink.in_data(arbiter_data);
     slow_sink.fus_valid(arbiter_valid);
     slow_sink.tus_ready(slow_ready);
-    slow_sink.transfer_fus(arbiter_transfer);
 
     sc_core::sc_start(sc_core::sc_time(1000, sc_core::SC_NS));
 

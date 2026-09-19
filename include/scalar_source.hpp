@@ -20,11 +20,8 @@
 // edge, while out_data / tds_valid are sc_signals whose lazy update lets the
 // downstream modules read the values written during the previous evaluation.
 //
-// do_deque is derived purely from the handshake signals and is therefore
-// computed by its own delta-cycle process, deque_predict_, instead of being
-// evaluated inside hw_pipe_sim_. It is a *prediction*: it states whether the
-// downstream modules will sample out_data on the next clock edge, so that a
-// do_deque here is always matched by a do_enque downstream one cycle later.
+// do_deque is derived directly from tds_valid and the downstream ready
+// signals inside hw_pipe_sim_.
 template <typename T = int>
 class ScalarSource : public sc_core::sc_module {
 public:
@@ -32,7 +29,6 @@ public:
     sc_core::sc_out<T> out_data;
     sc_core::sc_out<bool> tds_valid;
     sc_core::sc_vector<sc_core::sc_in<bool>> fds_ready;
-    sc_core::sc_out<bool> transfer_tds;
 
     SC_HAS_PROCESS(ScalarSource);
 
@@ -47,7 +43,6 @@ public:
           out_data("out_data"),
           tds_valid("tds_valid"),
           fds_ready("fds_ready", output_count),
-          transfer_tds("transfer_tds"),
           values_(std::move(values)),
           function_latency_(function_latency),
           hw_pipe_(function_latency){
@@ -85,7 +80,7 @@ private:
 
     void hw_pipe_sim_() {
 
-        const bool do_deque = transfer_tds.read();
+        const bool do_deque = tds_valid.read() && all_downstream_ready();
         
         if (do_deque) 
             hw_pipe_.back().reset();
@@ -115,7 +110,6 @@ private:
     }
 
     void hw_transfer_sim_() {
-        transfer_tds.write(tds_valid.read() && all_downstream_ready());
         // tus_ready.write(tds_valid.read() && all_downstream_ready() | hw_pipe_.front().has_value());
     }
 

@@ -38,45 +38,36 @@ int sc_main(int, char**) {
     sc_core::sc_buffer<int> source_to_fifo0_data;
     sc_core::sc_buffer<bool> source_to_fifo0_valid;
     sc_core::sc_buffer<bool> source_to_fifo0_ready;
-    sc_core::sc_buffer<bool> source_to_fifo0_transfer;
 
     sc_core::sc_buffer<int> fifo0_to_fifo1_data;
     sc_core::sc_buffer<bool> fifo0_to_fifo1_valid;
     sc_core::sc_buffer<bool> fifo0_to_fifo1_ready;
-    sc_core::sc_buffer<bool> fifo0_to_fifo1_transfer;
 
     sc_core::sc_buffer<int> fifo1_to_sink_data;
     sc_core::sc_buffer<bool> fifo1_to_sink_valid;
     sc_core::sc_buffer<bool> fifo1_to_sink_ready;
-    sc_core::sc_buffer<bool> fifo1_to_sink_transfer;
 
     source.out_data(source_to_fifo0_data);
     source.tds_valid(source_to_fifo0_valid);
     source.fds_ready[0](source_to_fifo0_ready);
-    source.transfer_tds(source_to_fifo0_transfer);
 
     fifo0.in_data(source_to_fifo0_data);
     fifo0.fus_valid(source_to_fifo0_valid);
     fifo0.tus_ready(source_to_fifo0_ready);
-    fifo0.transfer_fus(source_to_fifo0_transfer);
     fifo0.out_data(fifo0_to_fifo1_data);
     fifo0.tds_valid(fifo0_to_fifo1_valid);
     fifo0.fds_ready[0](fifo0_to_fifo1_ready);
-    fifo0.transfer_tds(fifo0_to_fifo1_transfer);
 
     fifo1.in_data(fifo0_to_fifo1_data);
     fifo1.fus_valid(fifo0_to_fifo1_valid);
     fifo1.tus_ready(fifo0_to_fifo1_ready);
-    fifo1.transfer_fus(fifo0_to_fifo1_transfer);
     fifo1.out_data(fifo1_to_sink_data);
     fifo1.tds_valid(fifo1_to_sink_valid);
     fifo1.fds_ready[0](fifo1_to_sink_ready);
-    fifo1.transfer_tds(fifo1_to_sink_transfer);
 
     sink.in_data(fifo1_to_sink_data);
     sink.fus_valid(fifo1_to_sink_valid);
     sink.tus_ready(fifo1_to_sink_ready);
-    sink.transfer_fus(fifo1_to_sink_transfer);
 
     sc_core::sc_start(sc_core::sc_time(300, sc_core::SC_NS));
 

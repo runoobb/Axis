@@ -24,10 +24,6 @@ public:
     sc_core::sc_out<T> out_data;
     sc_core::sc_vector<sc_core::sc_in<bool>> fds_ready;
     sc_core::sc_out<bool> tds_valid;
-    // One transfer line per upstream port: every upstream drives its own transfer_tds, and the
-    // joint handshake only enqueues once all of them signal a transfer for the next cycle.
-    sc_core::sc_vector<sc_core::sc_in<bool>> transfer_fus;
-    sc_core::sc_out<bool> transfer_tds;
 
     SC_HAS_PROCESS(ALU);
 
@@ -46,8 +42,6 @@ public:
           out_data("out_data"),
           fds_ready("fds_ready", output_count_),
           tds_valid("tds_valid"),
-          transfer_fus("transfer_fus", input_count_),
-          transfer_tds("transfer_tds"),
           op_(std::move(op)),
           hw_pipe_(function_latency_),
           input_cooldown_remaining_(input_count_, 0) {
@@ -88,7 +82,7 @@ private:
     // delta-cycle re-evaluation below.
 
     void hw_pipe_sim_() {
-        const bool do_deque = transfer_tds.read();
+        const bool do_deque = tds_valid.read() && all_downstream_ready();
 
         if (do_deque) {
             hw_pipe_.back().reset();
@@ -107,8 +101,8 @@ private:
             }
         }
 
-        const bool do_enque = std::all_of(transfer_fus.begin(), transfer_fus.end(), [](const auto& transfer) {
-            return transfer.read();
+        const bool do_enque = tus_ready.read() && std::all_of(fus_valid.begin(), fus_valid.end(), [](const auto& valid) {
+            return valid.read();
         });
 
         if (do_enque) {
@@ -151,7 +145,6 @@ private:
                 return !stage.has_value();
         });
 
-        transfer_tds.write(tds_valid.read() && all_downstream_ready());
         tus_ready.write(((tds_valid.read() && all_downstream_ready()) || hw_pipe_not_full) && all_cooldowns_expired && all_upstream_valid);
     }
 

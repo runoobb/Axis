@@ -52,55 +52,43 @@ int sc_main(int, char**) {
     sc_core::sc_buffer<int> write_data_signal;
     sc_core::sc_buffer<bool> write_addr_valid;
     sc_core::sc_buffer<bool> write_data_valid;
-    sc_core::sc_buffer<bool> write_addr_transfer;
-    sc_core::sc_buffer<bool> write_data_transfer;
     // Single shared ready line: the addr and data sources handshake jointly with the SRAM.
     sc_core::sc_buffer<bool> write_ready;
 
     sc_core::sc_buffer<std::size_t> read_addr_signal;
     sc_core::sc_buffer<bool> read_addr_valid;
     sc_core::sc_buffer<bool> read_addr_ready;
-    sc_core::sc_buffer<bool> read_addr_transfer;
 
     sc_core::sc_buffer<int> read_data_signal;
     sc_core::sc_buffer<bool> read_data_valid;
-    sc_core::sc_buffer<bool> read_data_transfer;
     sc_core::sc_buffer<bool> sink_ready;
 
     write_addr_source.out_data(write_addr_signal);
     write_addr_source.tds_valid(write_addr_valid);
-    write_addr_source.transfer_tds(write_addr_transfer);
     write_addr_source.fds_ready[0](write_ready);
     sram.write_addr(write_addr_signal);
     sram.write_fus_valid[0](write_addr_valid);
-    sram.write_transfer_fus[0](write_addr_transfer);
     sram.write_tus_ready(write_ready);
 
     write_data_source.out_data(write_data_signal);
     write_data_source.tds_valid(write_data_valid);
-    write_data_source.transfer_tds(write_data_transfer);
     write_data_source.fds_ready[0](write_ready);
     sram.write_data(write_data_signal);
     sram.write_fus_valid[1](write_data_valid);
-    sram.write_transfer_fus[1](write_data_transfer);
 
     read_addr_source.out_data(read_addr_signal);
     read_addr_source.tds_valid(read_addr_valid);
-    read_addr_source.transfer_tds(read_addr_transfer);
     read_addr_source.fds_ready[0](read_addr_ready);
     sram.read_addr(read_addr_signal);
     sram.read_fus_valid(read_addr_valid);
-    sram.read_transfer_fus(read_addr_transfer);
     sram.read_tus_ready(read_addr_ready);
 
     sram.read_data(read_data_signal);
     sram.read_tds_valid(read_data_valid);
-    sram.read_transfer_tds(read_data_transfer);
     sram.read_fds_ready[0](sink_ready);
     sink.in_data(read_data_signal);
     sink.fus_valid(read_data_valid);
     sink.tus_ready(sink_ready);
-    sink.transfer_fus(read_data_transfer);
 
     sc_core::sc_start(sc_core::sc_time(1000, sc_core::SC_NS));
 
